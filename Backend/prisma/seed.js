@@ -9,6 +9,7 @@ async function main() {
   const doctorsData = [
     {
       name: 'Dr. Sarah Wilson',
+      username: 'sarah_wilson',
       specialist: 'Oncologist',
       experience: 15,
       email: 'sarah.wilson@medcan.com',
@@ -16,6 +17,7 @@ async function main() {
     },
     {
       name: 'Dr. James Chen',
+      username: 'james_chen',
       specialist: 'Hematologist',
       experience: 12,
       email: 'james.chen@medcan.com',
@@ -23,6 +25,7 @@ async function main() {
     },
     {
       name: 'Dr. Emily Rodriguez',
+      username: 'emily_rodriguez',
       specialist: 'Radiation Oncologist',
       experience: 10,
       email: 'emily.rodriguez@medcan.com',
@@ -30,6 +33,7 @@ async function main() {
     },
     {
       name: 'Dr. Michael Chang',
+      username: 'michael_chang',
       specialist: 'Surgical Oncologist',
       experience: 20,
       email: 'michael.chang@medcan.com',
@@ -37,6 +41,7 @@ async function main() {
     },
     {
       name: 'Dr. Lisa Patel',
+      username: 'lisa_patel',
       specialist: 'Pediatric Oncologist',
       experience: 8,
       email: 'lisa.patel@medcan.com',
@@ -96,17 +101,20 @@ async function main() {
   // Seed Admins
   const admins = [
     { username: 'admin@canqure.com', password: 'admin123', role: 'admin' },
-    { username: 'hospital@canqure.com', password: 'hospital123', role: 'hospital_admin' }
+    { username: 'hospital@canqure.com', password: 'hospital123', role: 'hospital_admin' },
+    { username: 'apollo@canqure.com', password: 'apollo123', role: 'pharmacy', pharmacyName: 'Apollo Pharmacy' },
+    { username: 'medplus@canqure.com', password: 'medplus123', role: 'pharmacy', pharmacyName: 'MedPlus Chemist' },
+    { username: 'fortis@canqure.com', password: 'fortis123', role: 'pharmacy', pharmacyName: 'Fortis Medstore' }
   ];
 
   for (const adminData of admins) {
     await prisma.admin.upsert({
       where: { username: adminData.username },
-      update: { role: adminData.role },
+      update: { role: adminData.role, pharmacyName: adminData.pharmacyName || null },
       create: adminData,
     });
   }
-  console.log('Seeded demo admins');
+  console.log('Seeded demo admins including three distinct pharmacies');
 
   // Seed Patient
   const patientData = {
@@ -123,6 +131,20 @@ async function main() {
   });
   console.log('Seeded demo patient');
 
+  // Seed CancerType for patient
+  await prisma.cancerType.deleteMany({ where: { userId: patient.id } }).catch(e => {});
+  await prisma.cancerType.create({
+    data: {
+      name: 'Breast Cancer',
+      stage: 2,
+      description: 'Invasive ductal carcinoma, hormone receptor positive',
+      symptoms: 'Mild fatigue, localized pain',
+      treatments: 'Hormone therapy (Tamoxifen), targeted therapy',
+      userId: patient.id
+    }
+  }).catch(e => console.log("CancerType seed error:", e.message));
+  console.log('Seeded cancer type for patient');
+
   // Seed Mock Appointments for Routing Dashboard
   const docForApt = await prisma.doctor.findFirst();
   if (docForApt && patient) {
@@ -136,6 +158,48 @@ async function main() {
       await prisma.appointment.create({ data: appt }).catch(e => console.log("Appointment exist or err", e.message));
     }
     console.log('Seeded mock appointments');
+  }
+
+  // Seed Mock Refill Orders
+  if (patient) {
+    await prisma.refillOrder.deleteMany().catch(e => {});
+    const mockRefills = [
+      {
+        medName: 'Imatinib 400mg',
+        patientName: patient.name || 'John Patient',
+        patientId: patient.id,
+        pharmacyName: 'Apollo Pharmacy',
+        price: '₹2,000',
+        status: 'PENDING',
+        deliveryTime: '2 hours',
+        daysRemaining: 3
+      },
+      {
+        medName: 'Doxorubicin 50mg',
+        patientName: patient.name || 'John Patient',
+        patientId: patient.id,
+        pharmacyName: 'MedPlus Chemist',
+        price: '₹4,500',
+        status: 'PREPARING',
+        deliveryTime: '1 day',
+        daysRemaining: 12
+      },
+      {
+        medName: 'Pembrolizumab 100mg',
+        patientName: patient.name || 'John Patient',
+        patientId: patient.id,
+        pharmacyName: 'Fortis Medstore',
+        price: '₹85,000',
+        status: 'DELIVERED',
+        deliveryTime: '4 hours',
+        daysRemaining: 8
+      }
+    ];
+
+    for (const refill of mockRefills) {
+      await prisma.refillOrder.create({ data: refill }).catch(e => console.log("Refill seed err", e.message));
+    }
+    console.log('Seeded mock refill orders');
   }
 
   console.log('Seeding finished.');

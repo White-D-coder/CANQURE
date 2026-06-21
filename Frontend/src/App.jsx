@@ -9,6 +9,7 @@ import UserDashboard from './pages/UserDashboard/UserDashboard';
 import RiskAssessment from './pages/RiskAssessment/RiskAssessment';
 import ReportHistory from './pages/ReportHistory/ReportHistory';
 import HospitalDashboard from './pages/HospitalDashboard/HospitalDashboard';
+import PharmacyDashboard from './pages/PharmacyDashboard/PharmacyDashboard';
 import ProtectedRoute from './components/ProtectedRoute';
 
 function App() {
@@ -44,6 +45,16 @@ function App() {
                         </ProtectedRoute>
                     }
                 />
+
+                <Route
+                    path="/pharmacy"
+                    element={
+                        <ProtectedRoute allowedRoles={['pharmacy', 'admin']}>
+                            <PharmacyDashboard />
+                        </ProtectedRoute>
+                    }
+                />
+
 
                 <Route
                     path="/dashboard"

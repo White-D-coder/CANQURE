@@ -17,6 +17,7 @@ model User {
   Appointments Appointment[]
   CancerType   CancerType[]
   Reports      Report[]
+  refillOrders RefillOrder[]
 }
 
 model Hospital {
@@ -85,12 +86,14 @@ model TimeSlot {
 }
 
 model Admin {
-  adminId  String @id @default(auto()) @map("_id") @db.ObjectId
-  username String @unique
-  password String
-  role     String @default("admin")
-  hospital Hospital?
+  adminId      String @id @default(auto()) @map("_id") @db.ObjectId
+  username     String @unique
+  password     String
+  role         String @default("admin")
+  pharmacyName String?
+  hospital     Hospital?
 }
+
 
 model Medicine {
   medId       String   @id @default(auto()) @map("_id") @db.ObjectId
@@ -130,3 +133,19 @@ model Report {
   doctor             Doctor?  @relation(fields: [doctorId], references: [doctorId])
   doctorId           String?  @db.ObjectId
 }
+
+model RefillOrder {
+  id            String   @id @default(auto()) @map("_id") @db.ObjectId
+  medicationId  String?  @db.ObjectId
+  medName       String
+  patientName   String
+  patientId     String   @db.ObjectId
+  user          User     @relation(fields: [patientId], references: [id])
+  pharmacyName  String   // Apollo Pharmacy, Fortis Medstore, MedPlus Chemist
+  price         String
+  status        String   @default("PENDING") // PENDING, PREPARING, OUT_FOR_DELIVERY, DELIVERED
+  deliveryTime  String
+  daysRemaining Int      @default(5)
+  createdAt     DateTime @default(now())
+}
+

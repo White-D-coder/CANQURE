@@ -35,3 +35,22 @@ export const getDoctorAvailability = async (doctorId, date) => {
         throw error;
     }
 };
+
+export const createRefillOrder = async (orderData) => {
+    try {
+        const response = await api.post('/refill-orders', orderData);
+        return response.data;
+    } catch (error) {
+        throw error;
+    }
+};
+
+export const getPatientRefillOrders = async () => {
+    try {
+        const response = await api.get('/refill-orders/patient');
+        return response.data;
+    } catch (error) {
+        throw error;
+    }
+};
+

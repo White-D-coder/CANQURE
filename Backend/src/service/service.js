@@ -11,6 +11,7 @@ import userRoutes from '../routes/user.routes.js';
 import medicinalRoutes from '../routes/medicinal.routes.js';
 import consultationRoutes from '../routes/consultation.routes.js';
 import hospitalRoutes from '../routes/hospital.routes.js';
+import refillRoutes from '../routes/refill.routes.js';
 import axios from 'axios';
 import cors from 'cors';
 
@@ -32,6 +33,7 @@ apiRouter.use('/user', userRoutes);
 apiRouter.use('/medicinal', medicinalRoutes);
 apiRouter.use('/consultations', consultationRoutes);
 apiRouter.use('/hospitals', hospitalRoutes);
+apiRouter.use('/refill-orders', refillRoutes);
 
 // ML Risk Assessment Proxy Route
 apiRouter.post('/risk-assessment', async (req, res) => {
@@ -101,9 +103,10 @@ apiRouter.post('/login', async (req, res) => {
             console.log("PASSWORD MATCH:", isMatch);
             if (isMatch) {
                 const role = admin.role || 'admin';
-                const token = jwt.sign({ id: admin.adminId, role }, JWT_SECRET, { expiresIn: '1h' });
+                const token = jwt.sign({ id: admin.adminId, role, pharmacyName: admin.pharmacyName }, JWT_SECRET, { expiresIn: '1h' });
                 console.log("GENERATED ADMIN TOKEN FOR:", admin.username);
-                return res.status(200).json({ message: "Login successful", token, role, user: { id: admin.adminId, username: admin.username, role } });
+                return res.status(200).json({ message: "Login successful", token, role, user: { id: admin.adminId, username: admin.username, role, pharmacyName: admin.pharmacyName } });
+
             }
         }
 

@@ -42,6 +42,8 @@ function Login() {
                 navigate('/hospital');
             } else if (res.data.role === 'doctor') {
                 navigate('/doctors');
+            } else if (res.data.role === 'pharmacy') {
+                navigate('/pharmacy');
             } else {
                 navigate('/dashboard');
             }
@@ -209,10 +211,10 @@ function Login() {
 
                 <div style={{ marginTop: '24px', paddingTop: '20px', borderTop: '1px solid #f3f4f6' }}>
                     <p style={{ fontSize: '0.8rem', color: 'var(--text-secondary)', marginBottom: '12px', textAlign: 'center', fontWeight: '600', letterSpacing: '0.05em', textTransform: 'uppercase' }}>Demo Access</p>
-                    <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: '8px' }}>
+                    <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: '6px' }}>
                         <button
                             onClick={() => { setEmail('admin@canqure.com'); setPassword('admin123'); }}
-                            style={{ padding: '8px 4px', fontSize: '0.75rem', borderRadius: '8px', border: '1px solid #e5e7eb', background: '#f9fafb', cursor: 'pointer', transition: 'all 0.2s' }}
+                            style={{ padding: '8px 2px', fontSize: '0.7rem', borderRadius: '8px', border: '1px solid #e5e7eb', background: '#f9fafb', cursor: 'pointer', transition: 'all 0.2s', fontWeight: '500' }}
                             onMouseOver={(e) => { e.target.style.background = '#eff6ff'; e.target.style.borderColor = '#bfdbfe'; }}
                             onMouseOut={(e) => { e.target.style.background = '#f9fafb'; e.target.style.borderColor = '#e5e7eb'; }}
                         >
@@ -220,7 +222,7 @@ function Login() {
                         </button>
                         <button
                             onClick={() => { setEmail('patient@canqure.com'); setPassword('patient123'); }}
-                            style={{ padding: '8px 4px', fontSize: '0.75rem', borderRadius: '8px', border: '1px solid #e5e7eb', background: '#f9fafb', cursor: 'pointer', transition: 'all 0.2s' }}
+                            style={{ padding: '8px 2px', fontSize: '0.7rem', borderRadius: '8px', border: '1px solid #e5e7eb', background: '#f9fafb', cursor: 'pointer', transition: 'all 0.2s', fontWeight: '500' }}
                             onMouseOver={(e) => { e.target.style.background = '#eff6ff'; e.target.style.borderColor = '#bfdbfe'; }}
                             onMouseOut={(e) => { e.target.style.background = '#f9fafb'; e.target.style.borderColor = '#e5e7eb'; }}
                         >
@@ -228,7 +230,7 @@ function Login() {
                         </button>
                         <button
                             onClick={() => { setEmail('hospital@canqure.com'); setPassword('hospital123'); }}
-                            style={{ padding: '8px 4px', fontSize: '0.75rem', borderRadius: '8px', border: '1px solid #e5e7eb', background: '#f9fafb', cursor: 'pointer', transition: 'all 0.2s' }}
+                            style={{ padding: '8px 2px', fontSize: '0.7rem', borderRadius: '8px', border: '1px solid #e5e7eb', background: '#f9fafb', cursor: 'pointer', transition: 'all 0.2s', fontWeight: '500' }}
                             onMouseOver={(e) => { e.target.style.background = '#eff6ff'; e.target.style.borderColor = '#bfdbfe'; }}
                             onMouseOut={(e) => { e.target.style.background = '#f9fafb'; e.target.style.borderColor = '#e5e7eb'; }}
                         >
@@ -236,13 +238,40 @@ function Login() {
                         </button>
                         <button
                             onClick={() => { setEmail('sarah.wilson@medcan.com'); setPassword('password123'); }}
-                            style={{ padding: '8px 4px', fontSize: '0.75rem', borderRadius: '8px', border: '1px solid #e5e7eb', background: '#f9fafb', cursor: 'pointer', transition: 'all 0.2s' }}
+                            style={{ padding: '8px 2px', fontSize: '0.7rem', borderRadius: '8px', border: '1px solid #e5e7eb', background: '#f9fafb', cursor: 'pointer', transition: 'all 0.2s', fontWeight: '500' }}
                             onMouseOver={(e) => { e.target.style.background = '#eff6ff'; e.target.style.borderColor = '#bfdbfe'; }}
                             onMouseOut={(e) => { e.target.style.background = '#f9fafb'; e.target.style.borderColor = '#e5e7eb'; }}
                         >
                             Doctor
                         </button>
                     </div>
+                    <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '6px', marginTop: '6px' }}>
+                        <button
+                            onClick={() => { setEmail('apollo@canqure.com'); setPassword('apollo123'); }}
+                            style={{ padding: '8px 2px', fontSize: '0.65rem', borderRadius: '8px', border: '1px solid #e5e7eb', background: '#f9fafb', cursor: 'pointer', transition: 'all 0.2s', fontWeight: '600' }}
+                            onMouseOver={(e) => { e.target.style.background = '#eff6ff'; e.target.style.borderColor = '#bfdbfe'; }}
+                            onMouseOut={(e) => { e.target.style.background = '#f9fafb'; e.target.style.borderColor = '#e5e7eb'; }}
+                        >
+                            Apollo Pharma
+                        </button>
+                        <button
+                            onClick={() => { setEmail('medplus@canqure.com'); setPassword('medplus123'); }}
+                            style={{ padding: '8px 2px', fontSize: '0.65rem', borderRadius: '8px', border: '1px solid #e5e7eb', background: '#f9fafb', cursor: 'pointer', transition: 'all 0.2s', fontWeight: '600' }}
+                            onMouseOver={(e) => { e.target.style.background = '#eff6ff'; e.target.style.borderColor = '#bfdbfe'; }}
+                            onMouseOut={(e) => { e.target.style.background = '#f9fafb'; e.target.style.borderColor = '#e5e7eb'; }}
+                        >
+                            MedPlus Pharma
+                        </button>
+                        <button
+                            onClick={() => { setEmail('fortis@canqure.com'); setPassword('fortis123'); }}
+                            style={{ padding: '8px 2px', fontSize: '0.65rem', borderRadius: '8px', border: '1px solid #e5e7eb', background: '#f9fafb', cursor: 'pointer', transition: 'all 0.2s', fontWeight: '600' }}
+                            onMouseOver={(e) => { e.target.style.background = '#eff6ff'; e.target.style.borderColor = '#bfdbfe'; }}
+                            onMouseOut={(e) => { e.target.style.background = '#f9fafb'; e.target.style.borderColor = '#e5e7eb'; }}
+                        >
+                            Fortis Pharma
+                        </button>
+                    </div>
+
                 </div>
 
 

@@ -58,10 +58,15 @@ export const verifyDoctor = (req, res, next) => {
 
 export const verifyPatient = (req, res, next) => {
     verifyToken(req, res, () => {
-        if (req.user.role === 'patient' || req.user.role === 'admin') {
+        if (
+            req.user.role === 'patient' ||
+            req.user.role === 'primary_caregiver' ||
+            req.user.role === 'secondary_caregiver' ||
+            req.user.role === 'admin'
+        ) {
             next();
         } else {
-            res.status(403).json({ message: 'Access denied: Patients only' });
+            res.status(403).json({ message: 'Access denied: Patients and Caregivers only' });
         }
     });
 };
@@ -75,3 +80,14 @@ export const verifyHospitalAdmin = (req, res, next) => {
         }
     });
 };
+
+export const verifyPharmacy = (req, res, next) => {
+    verifyToken(req, res, () => {
+        if (req.user.role === 'pharmacy' || req.user.role === 'admin') {
+            next();
+        } else {
+            res.status(403).json({ message: 'Access denied: Pharmacy only' });
+        }
+    });
+};
+
