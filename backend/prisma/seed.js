@@ -64,10 +64,20 @@ async function main() {
   const times = ['09:00', '10:00', '11:00', '14:00', '15:00', '16:00'];
 
   for (const doc of doctorsData) {
+    const hashedPassword = await bcrypt.hash(doc.password, 10);
     const doctor = await prisma.doctor.upsert({
       where: { email: doc.email },
-      update: {},
-      create: doc,
+      update: {
+        name: doc.name,
+        username: doc.username,
+        specialist: doc.specialist,
+        experience: doc.experience,
+        password: hashedPassword
+      },
+      create: {
+        ...doc,
+        password: hashedPassword
+      },
     });
     console.log(`Created/Updated doctor: ${doctor.name}`);
 
@@ -108,10 +118,18 @@ async function main() {
   ];
 
   for (const adminData of admins) {
+    const hashedPassword = await bcrypt.hash(adminData.password, 10);
     await prisma.admin.upsert({
       where: { username: adminData.username },
-      update: { role: adminData.role, pharmacyName: adminData.pharmacyName || null },
-      create: adminData,
+      update: { 
+        role: adminData.role, 
+        pharmacyName: adminData.pharmacyName || null,
+        password: hashedPassword
+      },
+      create: {
+        ...adminData,
+        password: hashedPassword
+      },
     });
   }
   console.log('Seeded demo admins including three distinct pharmacies');
