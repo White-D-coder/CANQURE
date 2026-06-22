@@ -96,7 +96,7 @@ We have documented the system architecture using detailed Mermaid diagrams:
 
 2. **Backend Setup:**
    ```bash
-   cd Backend
+   cd backend
    npm install
    # Create a .env file based on .env.example
    npm run dev
@@ -104,7 +104,7 @@ We have documented the system architecture using detailed Mermaid diagrams:
 
 3. **Frontend Setup:**
    ```bash
-   cd ../Frontend
+   cd ../frontend-web
    npm install
    npm run dev
    ```
