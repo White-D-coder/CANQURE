@@ -2,7 +2,11 @@ import { BaseService } from '../../shared/BaseService.js';
 
 export class EmergencyService extends BaseService {
     async getHospitals() {
-        return await this.prisma.hospital.findMany();
+        return await this.prisma.hospital.findMany({
+            include: {
+                doctors: true
+            }
+        });
     }
 
     async createSosAlert({ userId, patientName, address, patientLat, patientLng, hospitalId, routePath, clinicalBrief }) {

@@ -36,6 +36,17 @@ export class HospitalOperationsController extends BaseController {
         }
     };
 
+    getMyHospital = async (req, res) => {
+        try {
+            const adminId = req.user.id;
+            const hospital = await this.hospitalOperationsService.getMyHospitalByAdmin(adminId);
+            if (!hospital) return this.error(res, "Hospital not found for this admin", 404);
+            return this.success(res, hospital);
+        } catch (err) {
+            return this.error(res, "Failed to fetch admin's hospital", 500, err);
+        }
+    };
+
     createHospital = async (req, res) => {
         try {
             const hospital = await this.hospitalOperationsService.createHospital(req.body);

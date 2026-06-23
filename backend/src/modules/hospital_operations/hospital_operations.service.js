@@ -96,4 +96,12 @@ export class HospitalOperationsService extends BaseService {
             where: { id }
         });
     }
+
+    async getMyHospitalByAdmin(adminId) {
+        const admin = await this.prisma.admin.findUnique({
+            where: { id: adminId },
+            include: { hospital: true }
+        });
+        return admin ? admin.hospital : null;
+    }
 }

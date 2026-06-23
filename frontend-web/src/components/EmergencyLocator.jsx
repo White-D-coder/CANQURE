@@ -173,6 +173,17 @@ const EmergencyLocator = ({ user }) => {
             });
             const marker = L.marker([h.coords.lat, h.coords.lng], { icon: hospitalIcon }).addTo(group);
             
+            marker.bindPopup(`
+                <div style="font-family: inherit; padding: 6px; width: 220px; color: #1e293b;">
+                    <h4 style="margin: 0 0 6px 0; font-size: 13px; font-weight: 800; color: #0f172a;">${h.name}</h4>
+                    <div style="display: flex; flex-direction: column; gap: 4px; font-size: 11px; font-weight: 600;">
+                        <span style="color: #059669;">✓ Oncologist Ready</span>
+                        <span style="color: #2563eb;">✓ Equipments: ${h.facilities && h.facilities.length > 0 ? h.facilities.slice(0, 3).join(', ') : 'ICU, Oncology ER'}</span>
+                        <span style="color: #d97706;">✓ Admissions: ${h.bedsAvailable} Beds Available</span>
+                    </div>
+                </div>
+            `);
+            
             marker.on('click', () => {
                 handleSelectHospital(h);
             });
@@ -316,6 +327,7 @@ const EmergencyLocator = ({ user }) => {
                 let hLoc;
                 let hName = h.name;
                 let hBeds = h.bedsAvailable;
+                let hFacilities = h.facilities || [];
 
                 if (h.latitude && h.longitude) {
                     hLoc = { lat: h.latitude, lng: h.longitude };
@@ -323,6 +335,7 @@ const EmergencyLocator = ({ user }) => {
                     hLoc = customLocs[h.id].coords;
                     hName = customLocs[h.id].name || h.name;
                     hBeds = customLocs[h.id].bedsAvailable !== undefined ? customLocs[h.id].bedsAvailable : h.bedsAvailable;
+                    hFacilities = customLocs[h.id].facilities || hFacilities;
                 } else {
                     const angle = (i * 2 * Math.PI) / res.data.length;
                     const radius = 0.008 + (Math.random() * 0.015);
@@ -338,22 +351,32 @@ const EmergencyLocator = ({ user }) => {
                     ...h,
                     name: hName,
                     distance: distanceVal.toFixed(1),
-                    bedsAvailable: hBeds || Math.floor(Math.random() * 40 + 5),
+                    bedsAvailable: hBeds,
+                    facilities: hFacilities,
                     phone: h.phone || `+91 99${Math.floor(Math.random() * 9000000 + 1000000)}`,
                     specialty: h.specialty || ['Oncology ER', 'Cancer Care', 'Multi-Specialty Oncology'][i % 3],
                     wait: `${Math.floor(distanceVal * 1.8 + 4)} min`,
                     coords: hLoc
                 };
+            }).filter(h => {
+                const hasOncologist = (h.doctors && h.doctors.some(doc => doc.specialist.toLowerCase().includes('oncolog'))) || 
+                                      (h.specialty && h.specialty.toLowerCase().includes('oncolog')) ||
+                                      h.name.toLowerCase().includes('cancer') || h.name.toLowerCase().includes('oncology');
+                const hasEquipments = h.facilities && h.facilities.some(f => 
+                    ['chemotherapy', 'oncology', 'radiotherapy', 'radiation', 'surgical oncology', 'icu', 'emergency oncology', 'oncology er', 'emergency response', 'immunotherapy', 'cancer', 'equip'].some(keyword => f.toLowerCase().includes(keyword))
+                );
+                const hasBeds = h.bedsAvailable > 0;
+                return hasOncologist && hasEquipments && hasBeds;
             }).sort((a, b) => parseFloat(a.distance) - parseFloat(b.distance));
 
             setHospitals(processed);
         } catch (error) {
             console.error('Error fetching hospitals:', error);
             const mockData = [
-                { id: 'h1', name: 'Medanta Cancer Care Center', bedsAvailable: 12, phone: '+91 99991 11111', specialty: 'Oncology ER', latitude: 28.4312, longitude: 77.0423 },
-                { id: 'h2', name: 'Fortis Hospital Oncology Wing', bedsAvailable: 6, phone: '+91 88882 22222', specialty: 'Cancer Care', latitude: 28.4595, longitude: 77.0726 },
-                { id: 'h3', name: 'Max Super Speciality Hospital', bedsAvailable: 20, phone: '+91 77773 33333', specialty: 'Multi-Specialty', latitude: 28.5284, longitude: 77.2198 },
-                { id: 'h4', name: 'AIIMS Cancer Institute', bedsAvailable: 30, phone: '+91 66664 44444', specialty: 'Oncology ER', latitude: 28.5672, longitude: 77.2100 },
+                { id: 'h1', name: 'Medanta Cancer Care Center', bedsAvailable: 12, phone: '+91 99991 11111', specialty: 'Oncology ER', latitude: 28.4312, longitude: 77.0423, doctors: [{ specialist: 'Oncologist' }], facilities: ['Chemotherapy', 'ICU'] },
+                { id: 'h2', name: 'Fortis Hospital Oncology Wing', bedsAvailable: 6, phone: '+91 88882 22222', specialty: 'Cancer Care', latitude: 28.4595, longitude: 77.0726, doctors: [{ specialist: 'Pediatric Oncologist' }], facilities: ['Radiation Oncology', 'ICU'] },
+                { id: 'h3', name: 'Max Super Speciality Hospital', bedsAvailable: 20, phone: '+91 77773 33333', specialty: 'Multi-Specialty', latitude: 28.5284, longitude: 77.2198, doctors: [{ specialist: 'Radiation Oncologist' }], facilities: ['Oncology ER'] },
+                { id: 'h4', name: 'AIIMS Cancer Institute', bedsAvailable: 0, phone: '+91 66664 44444', specialty: 'Oncology ER', latitude: 28.5672, longitude: 77.2100, doctors: [], facilities: [] },
             ];
 
             const customLocsRaw = localStorage.getItem('custom_hospital_locations');
@@ -363,6 +386,7 @@ const EmergencyLocator = ({ user }) => {
                 let hLoc;
                 let hName = h.name;
                 let hBeds = h.bedsAvailable;
+                let hFacilities = h.facilities || [];
 
                 if (h.latitude && h.longitude) {
                     hLoc = { lat: h.latitude, lng: h.longitude };
@@ -370,6 +394,7 @@ const EmergencyLocator = ({ user }) => {
                     hLoc = customLocs[h.id].coords;
                     hName = customLocs[h.id].name || h.name;
                     hBeds = customLocs[h.id].bedsAvailable !== undefined ? customLocs[h.id].bedsAvailable : h.bedsAvailable;
+                    hFacilities = customLocs[h.id].facilities || hFacilities;
                 } else {
                     const angle = (i * 2 * Math.PI) / mockData.length;
                     const radius = 0.008 + (Math.random() * 0.015);
@@ -385,9 +410,19 @@ const EmergencyLocator = ({ user }) => {
                     name: hName,
                     distance: distanceVal.toFixed(1),
                     bedsAvailable: hBeds,
+                    facilities: hFacilities,
                     wait: `${Math.floor(distanceVal * 1.8 + 4)} min`,
                     coords: hLoc
                 };
+            }).filter(h => {
+                const hasOncologist = (h.doctors && h.doctors.some(doc => doc.specialist.toLowerCase().includes('oncolog'))) || 
+                                      (h.specialty && h.specialty.toLowerCase().includes('oncolog')) ||
+                                      h.name.toLowerCase().includes('cancer') || h.name.toLowerCase().includes('oncology');
+                const hasEquipments = h.facilities && h.facilities.some(f => 
+                    ['chemotherapy', 'oncology', 'radiotherapy', 'radiation', 'surgical oncology', 'icu', 'emergency oncology', 'oncology er', 'emergency response', 'immunotherapy', 'cancer', 'equip'].some(keyword => f.toLowerCase().includes(keyword))
+                );
+                const hasBeds = h.bedsAvailable > 0;
+                return hasOncologist && hasEquipments && hasBeds;
             }).sort((a, b) => parseFloat(a.distance) - parseFloat(b.distance));
 
             setHospitals(processed);
@@ -713,10 +748,15 @@ const EmergencyLocator = ({ user }) => {
                                             </div>
                                             <span className="text-[10px] font-black text-slate-500 shrink-0">{h.distance} km</span>
                                         </div>
-                                        <div className="flex items-center gap-3 text-[10px] text-slate-500 font-medium pl-7 mb-2">
-                                            <span className="flex items-center gap-0.5"><Bed size={9} />{h.bedsAvailable} Beds</span>
-                                            <span className="flex items-center gap-0.5"><Clock size={9} />{h.wait} wait</span>
-                                        </div>
+                                         <div className="flex items-center gap-3 text-[10px] text-slate-500 font-medium pl-7 mb-1">
+                                             <span className="flex items-center gap-0.5"><Bed size={9} />{h.bedsAvailable} Beds</span>
+                                             <span className="flex items-center gap-0.5"><Clock size={9} />{h.wait} wait</span>
+                                         </div>
+                                         <div className="flex flex-wrap items-center gap-1 text-[8px] font-bold pl-7 mb-2">
+                                             <span className="bg-emerald-50 text-emerald-700 border border-emerald-100/50 px-1 rounded flex items-center gap-0.5">✓ Oncologist Ready</span>
+                                             <span className="bg-blue-50 text-blue-700 border border-blue-100/50 px-1 rounded flex items-center gap-0.5">✓ Equipments Ready</span>
+                                             <span className="bg-amber-50 text-amber-700 border border-amber-100/50 px-1 rounded flex items-center gap-0.5">✓ Beds Open</span>
+                                         </div>
                                         {isSelected && (
                                             <div className="pl-7">
                                                 <button

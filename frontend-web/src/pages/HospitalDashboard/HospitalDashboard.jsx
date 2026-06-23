@@ -62,6 +62,51 @@ function HospitalDashboard() {
     const [successMsg, setSuccessMsg] = useState('');
     const [activeTab, setActiveTab] = useState('overview');
     const [referrals, setReferrals] = useState([]);
+    const [hospitalId, setHospitalId] = useState(user?.hospitalId || 'h1');
+
+    const fetchHospitalProfile = async () => {
+        try {
+            const token = localStorage.getItem('token');
+            const res = await api.get('/hospitals/admin/me', {
+                headers: { Authorization: `Bearer ${token}` }
+            });
+            if (res.data) {
+                const data = res.data;
+                const formatted = {
+                    name: data.name,
+                    bedsAvailable: data.bedsAvailable,
+                    facilities: data.facilities || [],
+                    address: data.address,
+                    lat: parseFloat(data.latitude) || 28.6288,
+                    lng: parseFloat(data.longitude) || 77.3662
+                };
+                setHospitalInfo(formatted);
+                setEditForm(formatted);
+                setHospitalId(data.id);
+                localStorage.setItem('hospital_info_config', JSON.stringify(formatted));
+                
+                // Sync with global custom_hospital_locations for patient/driver mapping
+                const hospitalIdKey = data.id || 'h1';
+                const customLocationsRaw = localStorage.getItem('custom_hospital_locations');
+                const customLocations = customLocationsRaw ? JSON.parse(customLocationsRaw) : {};
+                customLocations[hospitalIdKey] = {
+                    name: data.name,
+                    address: data.address,
+                    coords: { lat: parseFloat(data.latitude) || 28.6288, lng: parseFloat(data.longitude) || 77.3662 },
+                    bedsAvailable: data.bedsAvailable,
+                    facilities: data.facilities || []
+                };
+                localStorage.setItem('custom_hospital_locations', JSON.stringify(customLocations));
+                window.dispatchEvent(new Event('storage'));
+            }
+        } catch (err) {
+            console.error("Failed to fetch hospital profile:", err);
+        }
+    };
+
+    useEffect(() => {
+        fetchHospitalProfile();
+    }, []);
 
     // Leaflet refs for settings/config map
     const configMapRef = useRef(null);
@@ -459,28 +504,44 @@ function HospitalDashboard() {
 
     const handleSave = async () => {
         setLoadingState(true);
-        setTimeout(() => {
+        try {
+            const token = localStorage.getItem('token');
+            await api.put(`/hospitals/${hospitalId}`, {
+                name: editForm.name,
+                address: editForm.address,
+                bedsAvailable: editForm.bedsAvailable,
+                facilities: editForm.facilities,
+                latitude: parseFloat(editForm.lat),
+                longitude: parseFloat(editForm.lng)
+            }, {
+                headers: { Authorization: `Bearer ${token}` }
+            });
+
             setHospitalInfo({ ...editForm });
             localStorage.setItem('hospital_info_config', JSON.stringify(editForm));
             
             // Sync with global custom_hospital_locations for patient/driver mapping
-            const customLocations = {
-                'h1': {
-                    name: editForm.name,
-                    address: editForm.address,
-                    coords: { lat: parseFloat(editForm.lat) || 28.6288, lng: parseFloat(editForm.lng) || 77.3662 },
-                    bedsAvailable: editForm.bedsAvailable,
-                    facilities: editForm.facilities
-                }
+            const customLocationsRaw = localStorage.getItem('custom_hospital_locations');
+            const customLocations = customLocationsRaw ? JSON.parse(customLocationsRaw) : {};
+            customLocations[hospitalId] = {
+                name: editForm.name,
+                address: editForm.address,
+                coords: { lat: parseFloat(editForm.lat) || 28.6288, lng: parseFloat(editForm.lng) || 77.3662 },
+                bedsAvailable: editForm.bedsAvailable,
+                facilities: editForm.facilities
             };
             localStorage.setItem('custom_hospital_locations', JSON.stringify(customLocations));
             window.dispatchEvent(new Event('storage'));
 
             setIsEditing(false);
-            setLoadingState(false);
             setSuccessMsg('Hospital details and location updated successfully!');
             setTimeout(() => setSuccessMsg(''), 3000);
-        }, 800);
+        } catch (error) {
+            console.error("Failed to save hospital info:", error);
+            alert("Failed to update hospital details in the database.");
+        } finally {
+            setLoadingState(false);
+        }
     };
 
     const addFacility = () => {

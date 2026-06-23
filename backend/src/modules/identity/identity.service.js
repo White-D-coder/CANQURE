@@ -54,7 +54,7 @@ export class IdentityService extends BaseService {
                 
                 const pharmacyName = admin.pharmacy?.name || null;
                 const token = jwt.sign(
-                    { id: admin.id, role, pharmacyName },
+                    { id: admin.id, role, pharmacyName, hospitalId: admin.hospitalId },
                     JWT_SECRET,
                     { expiresIn: '7d' }
                 );
@@ -65,7 +65,8 @@ export class IdentityService extends BaseService {
                         id: admin.id,
                         username: admin.username,
                         role,
-                        pharmacyName
+                        pharmacyName,
+                        hospitalId: admin.hospitalId
                     }
                 };
             }

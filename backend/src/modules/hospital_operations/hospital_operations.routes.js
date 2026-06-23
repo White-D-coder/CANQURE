@@ -11,6 +11,7 @@ router.put('/dashboard/appointments/:id/status', verifyHospitalAdmin, controller
 
 // Hospital profile CRUD
 router.post('/', controller.createHospital);
+router.get('/admin/me', verifyHospitalAdmin, controller.getMyHospital);
 router.get('/', controller.getAllHospitals);
 router.get('/:id', controller.getHospitalById);
 router.put('/:id', controller.updateHospital);
