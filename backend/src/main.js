@@ -1,152 +1,76 @@
-import { prisma } from './db/prisma.js';
-import bcrypt from 'bcryptjs';
 import express from 'express';
-import { signupMiddleware } from './middleware/middleware.js';
-import jwt from 'jsonwebtoken';
-import dotenv from 'dotenv'
-import doctorRoutes from './api/v1/endpoints/doctor.routes.js';
-import adminRoutes from './api/v1/endpoints/admin.routes.js';
-import reportRoutes from './api/v1/endpoints/report.routes.js';
-import userRoutes from './api/v1/endpoints/user.routes.js';
-import medicinalRoutes from './api/v1/endpoints/medicinal.routes.js';
-import consultationRoutes from './api/v1/endpoints/consultation.routes.js';
-import hospitalRoutes from './api/v1/endpoints/hospital.routes.js';
-import refillRoutes from './api/v1/endpoints/refill.routes.js';
-import axios from 'axios';
 import cors from 'cors';
+import dotenv from 'dotenv';
 
-dotenv.config()
-const JWT_SECRET = process.env.JWT_SECRET
-const ML_SERVICE_URL = process.env.ML_SERVICE_URL || 'http://localhost:8000';
+// Import Modular Routers from Bounded Contexts
+import identityRoutes from './modules/identity/identity.routes.js';
+import patientCareRoutes from './modules/patient_care/patient_care.routes.js';
+import consultationsRoutes from './modules/consultations/consultations.routes.js';
+import medicationContinuityRoutes from './modules/medication_continuity/medication_continuity.routes.js';
+import documentsRoutes from './modules/documents/documents.routes.js';
+import emergencyRoutes from './modules/emergency/emergency.routes.js';
+import hospitalOperationsRoutes from './modules/hospital_operations/hospital_operations.routes.js';
+import pharmacyOperationsRoutes from './modules/pharmacy_operations/pharmacy_operations.routes.js';
+import notificationsRoutes from './modules/notifications/notifications.routes.js';
+import analyticsRoutes from './modules/analytics/analytics.routes.js';
+import auditRoutes from './modules/audit/audit.routes.js';
 
-const app = express()
+dotenv.config();
+
+const app = express();
 app.use(cors());
-app.use(express.json())
+app.use(express.json());
 
 const apiRouter = express.Router();
 app.use('/api', apiRouter);
 
-apiRouter.use('/doctors', doctorRoutes);
-apiRouter.use('/admin', adminRoutes);
-apiRouter.use('/reports', reportRoutes);
-apiRouter.use('/user', userRoutes);
-apiRouter.use('/medicinal', medicinalRoutes);
-apiRouter.use('/consultations', consultationRoutes);
-apiRouter.use('/hospitals', hospitalRoutes);
-apiRouter.use('/refill-orders', refillRoutes);
+// 1. Identity Context (Authentication & Admin CRUD)
+apiRouter.use('/', identityRoutes); // Mounts /signup, /login, and /admin/doctors, /admin/patients
 
-// ML Risk Assessment Proxy Route
-apiRouter.post('/risk-assessment', async (req, res) => {
-    try {
-        const response = await axios.post(`${ML_SERVICE_URL}/predict`, req.body);
-        res.json(response.data);
-    } catch (error) {
-        console.error("ML Service Error:", error.message);
-        res.status(500).json({ 
-            message: "Risk assessment service unavailable", 
-            error: error.message 
-        });
-    }
-});
+// 2. Patient Care Context (Dashboard)
+apiRouter.use('/user', patientCareRoutes); // Mounts /user/dashboard
 
-apiRouter.post('/signup', signupMiddleware, async (req, res) => {
-    try {
-        const { username, email, password } = req.body
-        const user = await prisma.user.findFirst({
-            where: {
-                OR: [
-                    { email: email },
-                    { username: username }
-                ]
-            }
-        })
-        if (user) {
-            return res.status(409).json({ message: "User or Email already exists" })
-        }
-        const hashedPassword = await bcrypt.hash(password, 10)
+// 3. Consultations Context (Booking, availability, slots scheduling, live scribing)
+apiRouter.use('/user', consultationsRoutes); // Mounts /user/doctors, /user/book-appointment, /user/availability
+apiRouter.use('/doctors', consultationsRoutes); // Mounts /doctors/:id/appointments, /doctors/:doctorId/patient/:patientId, /doctors/schedule
+apiRouter.use('/admin', consultationsRoutes); // Mounts /admin/schedule/create, /admin/schedule/status, /admin/schedule
+apiRouter.use('/consultations', consultationsRoutes); // Mounts /consultations/:appointmentId/start, etc.
 
-        const newUser = await prisma.user.create({
-            data: {
-                username: username,
-                name: username,
-                email: email,
-                password: hashedPassword
-            }
-        })
-        const token = jwt.sign({ id: newUser.id, role: 'patient' }, JWT_SECRET, { expiresIn: '1h' })
+// 4. Medication Continuity Context (Prescriptions, calendar sync)
+apiRouter.use('/', medicationContinuityRoutes); // Mounts /doctors/:id/patient/:patientId/prescription
+apiRouter.use('/medicinal', medicationContinuityRoutes); // Mounts /medicinal/sync
 
-        return res.status(201).json({
-            message: "User created",
-            token,
-            role: 'patient',
-            user: {
-                id: newUser.id,
-                name: newUser.name,
-                email: newUser.email,
-                role: 'patient'
-            }
-        })
-    } catch (error) {
-        console.error("Signup Error:", error);
-        return res.status(500).json({ message: "Internal Server Error", error: error.message })
-    }
-})
+// 5. Documents Context (PDF Report uploads, OCR extraction)
+apiRouter.use('/reports', documentsRoutes); // Mounts /reports/ (POST), /reports/patient/:userId, /reports/:id
+apiRouter.use('/medicinal', express.Router().post('/upload', documentsRoutes)); // Alias mapping for /medicinal/upload
 
-apiRouter.post('/login', async (req, res) => {
-    try {
-        const { identifier, password } = req.body;
+// 6. Emergency Context (SOS Broadcast, Telemetry updates, Hospital coordinates)
+apiRouter.use('/user', emergencyRoutes); // Mounts /user/emergency, /user/sos-broadcast, /user/hospitals
+apiRouter.use('/emergency', emergencyRoutes); // Mounts /emergency/sos/active, /emergency/sos/:id/ambulance
 
-        const admin = await prisma.admin.findUnique({ where: { username: identifier } });
-        console.log("LOGIN ATTEMPT - ADMIN CHECK:", admin ? "FOUND" : "NOT FOUND", "Identifier:", identifier);
-        if (admin) {
-            const isMatch = password === admin.password || await bcrypt.compare(password, admin.password);
-            console.log("PASSWORD MATCH:", isMatch);
-            if (isMatch) {
-                const role = admin.role || 'admin';
-                const token = jwt.sign({ id: admin.adminId, role, pharmacyName: admin.pharmacyName }, JWT_SECRET, { expiresIn: '1h' });
-                console.log("GENERATED ADMIN TOKEN FOR:", admin.username);
-                return res.status(200).json({ message: "Login successful", token, role, user: { id: admin.adminId, username: admin.username, role, pharmacyName: admin.pharmacyName } });
+// 7. Hospital Operations Context (Hospital beds, intake board)
+apiRouter.use('/hospitals', hospitalOperationsRoutes); // Mounts /hospitals/dashboard/appointments, /hospitals/ (CRUD)
 
-            }
-        }
+// 8. Pharmacy Operations Context (Refill Orders fulfillment)
+apiRouter.use('/refill-orders', pharmacyOperationsRoutes); // Mounts /refill-orders/...
 
-        const doctor = await prisma.doctor.findFirst({
-            where: { OR: [{ email: identifier }, { username: identifier }] }
-        });
-        console.log("LOGIN ATTEMPT - DOCTOR CHECK:", doctor ? "FOUND" : "NOT FOUND");
-        if (doctor) {
-            const isMatch = await bcrypt.compare(password, doctor.password);
-            if (isMatch || password === doctor.password) {
-                const token = jwt.sign({ id: doctor.doctorId, role: 'doctor' }, JWT_SECRET, { expiresIn: '1h' });
-                console.log("GENERATED DOCTOR TOKEN FOR:", doctor.name);
-                return res.status(200).json({ message: "Login successful", token, role: 'doctor', user: { id: doctor.doctorId, name: doctor.name, email: doctor.email, role: 'doctor' } });
-            }
-        }
+// 9. Notifications Context (Alerts & Reminders)
+apiRouter.use('/notifications', notificationsRoutes); // Mounts /notifications/alerts
 
-        const user = await prisma.user.findFirst({
-            where: { OR: [{ email: identifier }, { username: identifier }] }
-        });
-        if (user) {
-            const isMatch = await bcrypt.compare(password, user.password) || password === user.password;
-            if (isMatch) {
-                const token = jwt.sign({ id: user.id, role: 'patient' }, JWT_SECRET, { expiresIn: '1h' });
-                return res.status(200).json({ message: "Login successful", token, role: 'patient', user: { id: user.id, name: user.name, email: user.email, role: 'patient' } });
-            }
-        }
+// 10. Analytics Context (Risk Predictions Proxy)
+apiRouter.use('/', analyticsRoutes); // Mounts /risk-assessment
+apiRouter.use('/medicinal', express.Router().post('/risk', analyticsRoutes)); // Alias mapping for /medicinal/risk
 
-        return res.status(401).json({ message: "Invalid credentials" });
-    } catch (error) {
-        console.error("Login Error:", error);
-        return res.status(500).json({ message: "Internal Server Error", error: error.message });
-    }
-})
+// 11. Audit Context (Compliance logs)
+apiRouter.use('/audit', auditRoutes); // Mounts /audit/logs
 
 app.get('/', (req, res) => {
-    res.send("Welcome to CAN-QURE Backend Service")
-})
+    res.send("Welcome to CAN-QURE Modular Backend Service");
+});
 
-app.listen(3000, '0.0.0.0', () => {
-    console.log("Server started on port 3000 - API V1 Standardized");
+const PORT = process.env.PORT || 3000;
+app.listen(PORT, '0.0.0.0', () => {
+    console.log(`Server started on port ${PORT} - Modular Monolith Architecture`);
 });
 
 export default app;

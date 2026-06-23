@@ -7,37 +7,85 @@ datasource db {
   url      = env("DATABASE_URL")
 }
 
+// ---------- Enums ----------
+enum Role {
+  PATIENT
+  DOCTOR
+  HOSPITAL_ADMIN
+  PHARMACY_ADMIN
+  SYSTEM_ADMIN
+}
+
+enum Urgency {
+  NORMAL
+  URGENT
+  EMERGENCY
+}
+
+enum EmergencyStatus {
+  PENDING
+  DISPATCHED
+  EN_ROUTE
+  ARRIVED
+  RESOLVED
+}
+
+// ---------- Models ----------
+
 model User {
   id           String        @id @default(auto()) @map("_id") @db.ObjectId
   email        String        @unique
   username     String?       @unique
   name         String?
   password     String
+  role         Role          @default(PATIENT)
+  createdAt    DateTime      @default(now())
+
+  // Relations
   medicines    Medicine[]
-  Appointments Appointment[]
-  CancerType   CancerType[]
-  Reports      Report[]
+  appointments Appointment[]
+  cancerType   CancerType[]
+  reports      Report[]
   refillOrders RefillOrder[]
+  sosAlerts    SosAlert[]
 }
 
 model Hospital {
-  id           String        @id @default(auto()) @map("_id") @db.ObjectId
-  name         String
-  address      String
-  city         String
-  contact      String
-  email        String?
-  bedsAvailable Int?         @default(0)
-  facilities   String[]
-  adminId      String?       @unique @db.ObjectId
-  admin        Admin?        @relation(fields: [adminId], references: [adminId])
-  doctors      Doctor[]
-  appointments Appointment[]
-  createdAt    DateTime      @default(now())
+  id            String        @id @default(auto()) @map("_id") @db.ObjectId
+  name          String
+  address       String
+  city          String
+  contact       String
+  email         String?
+  bedsAvailable Int           @default(0)
+  facilities    String[]
+  latitude      Float         // Persistent map coordinates
+  longitude     Float         // Persistent map coordinates
+  createdAt     DateTime      @default(now())
+
+  // Relations
+  admins        Admin[]
+  doctors       Doctor[]
+  appointments  Appointment[]
+  sosAlerts     SosAlert[]
+}
+
+model Pharmacy {
+  id            String        @id @default(auto()) @map("_id") @db.ObjectId
+  name          String
+  address       String
+  contact       String
+  latitude      Float?
+  longitude     Float?
+  createdAt     DateTime      @default(now())
+
+  // Relations
+  admins        Admin[]
+  refillOrders  RefillOrder[]
 }
 
 model Doctor {
-  doctorId     String        @id @default(auto()) @map("_id") @db.ObjectId
+  id           String        @id @default(auto()) @map("_id") @db.ObjectId
   name         String
   username     String?       @unique
   specialist   String
@@ -46,106 +94,144 @@ model Doctor {
   password     String        @default("password123")
   rating       Float         @default(4.5)
   consultations Int          @default(0)
+  role         Role          @default(DOCTOR)
+
+  // Relations
   hospitalId   String?       @db.ObjectId
   hospital     Hospital?     @relation(fields: [hospitalId], references: [id])
   appointments Appointment[]
-  Reports      Report[]
+  reports      Report[]
   medicines    Medicine[]
   timeSlots    TimeSlot[]
 }
 
 model Appointment {
-  id          String    @id @default(auto()) @map("_id") @db.ObjectId
-  date        String
-  time        String
-  patientName String
-  doctor      Doctor    @relation(fields: [doctorId], references: [doctorId])
-  user        User      @relation(fields: [userId], references: [id])
-  userId      String    @db.ObjectId
-  doctorId    String    @db.ObjectId
-  hospitalId  String?   @db.ObjectId
-  hospital    Hospital? @relation(fields: [hospitalId], references: [id])
-  timeSlot    TimeSlot? @relation(fields: [timeSlotId], references: [id])
-  timeSlotId  String?   @unique @db.ObjectId
-  transcript        String?
-  aiSummary         String?
-  patientRoadmap    Json?     // Instructions, medications, follow-up
-  status            String    @default("SCHEDULED") // SCHEDULED, IN_PROGRESS, COMPLETED, CANCELLED, REROUTED
-  actualStartTime   DateTime?
-  urgencyLevel      String    @default("NORMAL") // NORMAL, URGENT, EMERGENCY
+  id              String            @id @default(auto()) @map("_id") @db.ObjectId
+  date            String            // YYYY-MM-DD
+  time            String            // HH:MM
+  patientName     String
+  urgencyLevel    Urgency           @default(NORMAL)
+  status          String            @default("SCHEDULED") // SCHEDULED, IN_PROGRESS, COMPLETED, CANCELLED, REROUTED
+  actualStartTime DateTime?
+
+  // Relations
+  userId          String            @db.ObjectId
+  user            User              @relation(fields: [userId], references: [id])
+  doctorId        String            @db.ObjectId
+  doctor          Doctor            @relation(fields: [doctorId], references: [id])
+  hospitalId      String?           @db.ObjectId
+  hospital        Hospital?         @relation(fields: [hospitalId], references: [id])
+  timeSlotId      String?           @unique @db.ObjectId
+  timeSlot        TimeSlot?         @relation(fields: [timeSlotId], references: [id])
+
+  transcript      String?
+  aiSummary       String?
+  patientRoadmap  Json?             // Custom structured recommendations/next-steps
+  createdAt       DateTime          @default(now())
 }
 
 model TimeSlot {
   id            String       @id @default(auto()) @map("_id") @db.ObjectId
   date          String
   time          String
-  status        String       @default("PENDING") // PENDING, AVAILABLE, BOOKED, FROZEN
+  status        String       @default("AVAILABLE") // AVAILABLE, BOOKED, FROZEN
   doctorId      String       @db.ObjectId
-  doctor        Doctor       @relation(fields: [doctorId], references: [doctorId])
+  doctor        Doctor       @relation(fields: [doctorId], references: [id])
   appointment   Appointment?
 }
 
-model Admin {
-  adminId      String @id @default(auto()) @map("_id") @db.ObjectId
-  username     String @unique
-  password     String
-  role         String @default("admin")
-  pharmacyName String?
-  hospital     Hospital?
+model SosAlert {
+  id             String          @id @default(auto()) @map("_id") @db.ObjectId
+  status         EmergencyStatus @default(PENDING)
+  patientName    String
+  address        String          // Resolved location address
+  patientLat     Float
+  patientLng     Float
+  ambulanceLat   Float?          // Live telemetry coordinates updated by driver
+  ambulanceLng   Float?          // Live telemetry coordinates updated by driver
+  routePath      Json?           // Full OSRM coordinate coordinate array [[lat, lng], ...]
+  clinicalBrief  String?
+  createdAt      DateTime        @default(now())
+  updatedAt      DateTime        @updatedAt
+
+  // Relations
+  userId         String          @db.ObjectId
+  user           User            @relation(fields: [userId], references: [id])
+  hospitalId     String          @db.ObjectId
+  hospital       Hospital        @relation(fields: [hospitalId], references: [id])
 }
 
+model Admin {
+  id           String        @id @default(auto()) @map("_id") @db.ObjectId
+  username     String        @unique
+  password     String
+  role         Role          @default(SYSTEM_ADMIN)
+
+  // Relations
+  hospitalId   String?       @db.ObjectId
+  hospital     Hospital?     @relation(fields: [hospitalId], references: [id])
+  pharmacyId   String?       @db.ObjectId
+  pharmacy     Pharmacy?     @relation(fields: [pharmacyId], references: [id])
+}
 
 model Medicine {
-  medId       String   @id @default(auto()) @map("_id") @db.ObjectId
+  id          String   @id @default(auto()) @map("_id") @db.ObjectId
   medName     String
   description String
   dose        String
   frequency   String
   startDate   DateTime
   endDate     DateTime
-  user        User     @relation(fields: [userId], references: [id])
+
+  // Relations
   userId      String   @db.ObjectId
-  doctor      Doctor?  @relation(fields: [doctorId], references: [doctorId])
+  user        User     @relation(fields: [userId], references: [id])
   doctorId    String?  @db.ObjectId
+  doctor      Doctor?  @relation(fields: [doctorId], references: [id])
 }
 
 model CancerType {
-  cancerId    String @id @default(auto()) @map("_id") @db.ObjectId
+  id          String @id @default(auto()) @map("_id") @db.ObjectId
   name        String
   stage       Int
   description String
   symptoms    String
   treatments  String
-  user        User   @relation(fields: [userId], references: [id])
+
+  // Relations
   userId      String @db.ObjectId
+  user        User   @relation(fields: [userId], references: [id])
 }
 
 model Report {
-  reportId           String   @id @default(auto()) @map("_id") @db.ObjectId
+  id                 String   @id @default(auto()) @map("_id") @db.ObjectId
   reportName         String
-  reportUrl          String   // Cloud storage URL (Google Drive)
-  parsedText         String?  // Full extracted text
-  extractedMedicines Json?    // Structured medicine data
+  reportUrl          String
+  parsedText         String?
+  extractedMedicines Json?
   status             String   @default("PROCESSED")
   date               DateTime @default(now())
-  user               User     @relation(fields: [userId], references: [id])
+
+  // Relations
   userId             String   @db.ObjectId
-  doctor             Doctor?  @relation(fields: [doctorId], references: [doctorId])
+  user               User     @relation(fields: [userId], references: [id])
   doctorId           String?  @db.ObjectId
+  doctor             Doctor?  @relation(fields: [doctorId], references: [id])
 }
 
 model RefillOrder {
   id            String   @id @default(auto()) @map("_id") @db.ObjectId
-  medicationId  String?  @db.ObjectId
   medName       String
   patientName   String
-  patientId     String   @db.ObjectId
-  user          User     @relation(fields: [patientId], references: [id])
-  pharmacyName  String   // Apollo Pharmacy, Fortis Medstore, MedPlus Chemist
   price         String
-  status        String   @default("PENDING") // PENDING, PREPARING, OUT_FOR_DELIVERY, DELIVERED
+  status        String   @default("PENDING")
   deliveryTime  String
   daysRemaining Int      @default(5)
   createdAt     DateTime @default(now())
-}
 
+  // Relations
+  patientId     String   @db.ObjectId
+  user          User     @relation(fields: [patientId], references: [id])
+  pharmacyId    String   @db.ObjectId
+  pharmacy      Pharmacy @relation(fields: [pharmacyId], references: [id])
+}

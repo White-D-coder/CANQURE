@@ -4,7 +4,7 @@ import { useAuth } from '../../contexts/AuthContext';
 import { 
     Building, LogOut, Bed, Activity, Users, Settings, 
     Plus, X, Save, CheckCircle, ShieldAlert, Navigation, 
-    Truck, FileText, AlertCircle, MapPin, Clock
+    Truck, FileText, AlertCircle, MapPin, Clock, Sun, Moon
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 import api from '../../api/axios';
@@ -17,13 +17,11 @@ const loadLeaflet = () => {
             return;
         }
 
-        // Inject Leaflet CSS
         const link = document.createElement('link');
         link.rel = 'stylesheet';
         link.href = 'https://unpkg.com/leaflet@1.9.4/dist/leaflet.css';
         document.head.appendChild(link);
 
-        // Inject Leaflet JS
         const script = document.createElement('script');
         script.src = 'https://unpkg.com/leaflet@1.9.4/dist/leaflet.js';
         script.onload = () => resolve(window.L);
@@ -35,10 +33,27 @@ function HospitalDashboard() {
     const { user, logout } = useAuth();
     const navigate = useNavigate();
     const [isLoading, setLoadingState] = useState(false);
-    const [hospitalInfo, setHospitalInfo] = useState({
-        name: "MedCan General Hospital",
-        bedsAvailable: 45,
-        facilities: ["Emergency Oncology", "Radiotherapy", "Chemotherapy Ward", "ICU", "Blood Bank"]
+    const [hospitalInfo, setHospitalInfo] = useState(() => {
+        try {
+            const saved = localStorage.getItem('hospital_info_config');
+            return saved ? JSON.parse(saved) : {
+                name: "MedCan General Hospital",
+                bedsAvailable: 45,
+                facilities: ["Emergency Oncology", "Radiotherapy", "Chemotherapy Ward", "ICU", "Blood Bank"],
+                address: "Sector 62, Noida, Uttar Pradesh, India",
+                lat: 28.6288,
+                lng: 77.3662
+            };
+        } catch (e) {
+            return {
+                name: "MedCan General Hospital",
+                bedsAvailable: 45,
+                facilities: ["Emergency Oncology", "Radiotherapy", "Chemotherapy Ward", "ICU", "Blood Bank"],
+                address: "Sector 62, Noida, Uttar Pradesh, India",
+                lat: 28.6288,
+                lng: 77.3662
+            };
+        }
     });
 
     const [isEditing, setIsEditing] = useState(false);
@@ -47,16 +62,24 @@ function HospitalDashboard() {
     const [successMsg, setSuccessMsg] = useState('');
     const [activeTab, setActiveTab] = useState('overview');
     const [referrals, setReferrals] = useState([]);
+
+    // Leaflet refs for settings/config map
+    const configMapRef = useRef(null);
+    const configMapInstance = useRef(null);
+    const configMarkerRef = useRef(null);
+    const configTileLayerRef = useRef(null);
     
     // Live SOS emergency states
     const [activeSos, setActiveSos] = useState(null);
     const [ambulancePos, setAmbulancePos] = useState({ lat: 28.6272, lng: 77.3726 });
     const [eta, setEta] = useState(10);
     const [progress, setProgress] = useState(0);
+    const [mapTheme, setMapTheme] = useState('dark'); // 'dark' or 'light'
 
     // Leaflet map refs for mini-tracker
     const miniMapRef = useRef(null);
     const miniMapInstance = useRef(null);
+    const tileLayerRef = useRef(null);
     const markersGroup = useRef(null);
     const routeLine = useRef(null);
     const ambulanceMarker = useRef(null);
@@ -101,12 +124,141 @@ function HospitalDashboard() {
         };
     }, [activeTab]);
 
-    // Animate ambulance tracking progress along real geolocations
+    // Handle map theme switching in hospital mini map
+    useEffect(() => {
+        if (tileLayerRef.current && miniMapInstance.current) {
+            const darkUrl = 'https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png';
+            const lightUrl = 'https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png';
+            tileLayerRef.current.setUrl(mapTheme === 'dark' ? darkUrl : lightUrl);
+        }
+    }, [mapTheme]);
+
+    // Geocode typed address and center the settings map
+    const searchConfigAddress = async () => {
+        if (!editForm.address || !editForm.address.trim()) return;
+        setLoadingState(true);
+        try {
+            const res = await fetch(`https://nominatim.openstreetmap.org/search?format=json&q=${encodeURIComponent(editForm.address)}&limit=1`);
+            const data = await res.json();
+            if (data && data.length > 0) {
+                const lat = parseFloat(data[0].lat);
+                const lng = parseFloat(data[0].lon);
+                setEditForm(prev => ({
+                    ...prev,
+                    lat: parseFloat(lat.toFixed(5)),
+                    lng: parseFloat(lng.toFixed(5))
+                }));
+                if (configMapInstance.current) {
+                    configMapInstance.current.setView([lat, lng], 15);
+                }
+            } else {
+                alert("Address location not found. Drag and place pin manually.");
+            }
+        } catch (e) {
+            console.error("Geocoding failed", e);
+            alert("Search service currently offline.");
+        } finally {
+            setLoadingState(false);
+        }
+    };
+
+    // Initialize/Update interactive hospital location settings map
+    useEffect(() => {
+        if (activeTab !== 'location') {
+            if (configMapInstance.current) {
+                configMapInstance.current.remove();
+                configMapInstance.current = null;
+            }
+            return;
+        }
+
+        loadLeaflet().then((L) => {
+            if (!configMapRef.current) return;
+
+            const lat = parseFloat(editForm.lat) || 28.6288;
+            const lng = parseFloat(editForm.lng) || 77.3662;
+
+            if (!configMapInstance.current) {
+                configMapInstance.current = L.map(configMapRef.current, {
+                    zoomControl: false,
+                    attributionControl: false
+                }).setView([lat, lng], 14);
+
+                const darkUrl = 'https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png';
+                const lightUrl = 'https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png';
+
+                configTileLayerRef.current = L.tileLayer(mapTheme === 'dark' ? darkUrl : lightUrl, {
+                    maxZoom: 19
+                }).addTo(configMapInstance.current);
+
+                const hospitalIcon = L.divIcon({
+                    html: `
+                        <div class="flex flex-col items-center">
+                            <div class="w-8 h-8 rounded-full bg-red-600 text-white border-2 border-slate-900 flex items-center justify-center text-xs font-black shadow-lg animate-bounce">
+                                H
+                            </div>
+                            <div class="w-0.5 h-2 bg-red-600"></div>
+                        </div>
+                    `,
+                    className: 'custom-config-pin',
+                    iconSize: [32, 40],
+                    iconAnchor: [16, 40]
+                });
+
+                configMarkerRef.current = L.marker([lat, lng], {
+                    draggable: true,
+                    icon: hospitalIcon
+                }).addTo(configMapInstance.current);
+
+                configMarkerRef.current.on('dragend', () => {
+                    const position = configMarkerRef.current.getLatLng();
+                    setEditForm(prev => ({
+                        ...prev,
+                        lat: parseFloat(position.lat.toFixed(5)),
+                        lng: parseFloat(position.lng.toFixed(5))
+                    }));
+                });
+            } else {
+                configMapInstance.current.setView([lat, lng]);
+                configMarkerRef.current.setLatLng([lat, lng]);
+            }
+        });
+    }, [activeTab, editForm.lat, editForm.lng]);
+
+    // Handle map theme switching on config map
+    useEffect(() => {
+        if (configTileLayerRef.current && configMapInstance.current) {
+            const darkUrl = 'https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png';
+            const lightUrl = 'https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png';
+            configTileLayerRef.current.setUrl(mapTheme === 'dark' ? darkUrl : lightUrl);
+        }
+    }, [mapTheme]);
+
+    const calculateHaversineDistance = (lat1, lon1, lat2, lon2) => {
+        const R = 6371; // Earth radius in km
+        const dLat = (lat2 - lat1) * Math.PI / 180;
+        const dLon = (lon2 - lon1) * Math.PI / 180;
+        const a = 
+            Math.sin(dLat / 2) * Math.sin(dLat / 2) +
+            Math.cos(lat1 * Math.PI / 180) * Math.cos(lat2 * Math.PI / 180) * 
+            Math.sin(dLon / 2) * Math.sin(dLon / 2);
+        const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+        return R * c;
+    };
+
+    // Animate ambulance tracking progress along OSRM coordinates
     useEffect(() => {
         if (activeSos) {
             const start = activeSos.coordinates || { lat: 28.6272, lng: 77.3726 };
             const hospitalId = activeSos.hospitalId;
             const destination = hospitalLocations[hospitalId] || hospitalLocations['h1'];
+            
+            // OSRM route coordinates passed from patient dashboard
+            const routePath = activeSos.routeCoordinates || [
+                [start.lat, start.lng],
+                [start.lat, destination.lng],
+                [destination.lat, destination.lng]
+            ];
 
             setAmbulancePos(start);
             setProgress(0);
@@ -115,6 +267,17 @@ function HospitalDashboard() {
             if (trackingInterval.current) clearInterval(trackingInterval.current);
 
             trackingInterval.current = setInterval(() => {
+                const savedAmbulancePos = localStorage.getItem('active_ambulance_pos');
+                if (savedAmbulancePos) {
+                    const parsedPos = JSON.parse(savedAmbulancePos);
+                    setAmbulancePos(parsedPos);
+                    
+                    // Calculate dynamic ETA using Haversine formula
+                    const dist = calculateHaversineDistance(parsedPos.lat, parsedPos.lng, destination.lat, destination.lng);
+                    setEta(Math.max(0, Math.ceil(dist * 1.5)));
+                    return;
+                }
+
                 setProgress(prev => {
                     const nextProgress = prev + 5;
                     if (nextProgress >= 100) {
@@ -125,11 +288,12 @@ function HospitalDashboard() {
                     }
                     
                     const ratio = nextProgress / 100;
-                    // Interpolate latitude and longitude
-                    const currentLat = start.lat + (destination.lat - start.lat) * ratio;
-                    const currentLng = start.lng + (destination.lng - start.lng) * ratio;
-
-                    const newPos = { lat: currentLat, lng: currentLng };
+                    
+                    // Stepping ambulance marker along actual OSRM road coordinates
+                    const index = Math.floor(ratio * (routePath.length - 1));
+                    const currentCoords = routePath[index] || routePath[routePath.length - 1];
+                    
+                    const newPos = { lat: currentCoords[0], lng: currentCoords[1] };
                     setAmbulancePos(newPos);
                     setEta(Math.max(1, Math.floor((1 - ratio) * 8)));
                     return nextProgress;
@@ -155,6 +319,12 @@ function HospitalDashboard() {
             const start = activeSos.coordinates || { lat: 28.6272, lng: 77.3726 };
             const hospitalId = activeSos.hospitalId;
             const destination = hospitalLocations[hospitalId] || hospitalLocations['h1'];
+            
+            const routePath = activeSos.routeCoordinates || [
+                [start.lat, start.lng],
+                [start.lat, destination.lng],
+                [destination.lat, destination.lng]
+            ];
 
             if (!miniMapInstance.current) {
                 miniMapInstance.current = L.map(miniMapRef.current, {
@@ -162,24 +332,21 @@ function HospitalDashboard() {
                     attributionControl: false
                 }).setView([start.lat, start.lng], 13);
 
-                L.tileLayer('https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png', {
+                const darkUrl = 'https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png';
+                const lightUrl = 'https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png';
+
+                tileLayerRef.current = L.tileLayer(mapTheme === 'dark' ? darkUrl : lightUrl, {
                     maxZoom: 19
                 }).addTo(miniMapInstance.current);
 
                 markersGroup.current = L.layerGroup().addTo(miniMapInstance.current);
 
                 // Draw red polyline routing
-                const pathCoordinates = [
-                    [start.lat, start.lng],
-                    [start.lat, destination.lng],
-                    [destination.lat, destination.lng]
-                ];
-
-                routeLine.current = L.polyline(pathCoordinates, {
+                routeLine.current = L.polyline(routePath, {
                     color: '#ef4444', // Red routing path
-                    weight: 3,
-                    opacity: 0.8,
-                    dashArray: '5, 5',
+                    weight: 4,
+                    opacity: 0.85,
+                    dashArray: '8, 6',
                     className: 'route-path-animation'
                 }).addTo(miniMapInstance.current);
 
@@ -205,7 +372,7 @@ function HospitalDashboard() {
                 const ambulanceIcon = L.divIcon({ html: ambulanceHtml, iconSize: [20, 20], iconAnchor: [10, 10] });
                 ambulanceMarker.current = L.marker([start.lat, start.lng], { icon: ambulanceIcon }).addTo(miniMapInstance.current);
 
-                miniMapInstance.current.fitBounds(L.latLngBounds(pathCoordinates), { padding: [20, 20] });
+                miniMapInstance.current.fitBounds(L.latLngBounds(routePath), { padding: [20, 20] });
             }
         });
     }, [activeSos, activeTab]);
@@ -294,9 +461,24 @@ function HospitalDashboard() {
         setLoadingState(true);
         setTimeout(() => {
             setHospitalInfo({ ...editForm });
+            localStorage.setItem('hospital_info_config', JSON.stringify(editForm));
+            
+            // Sync with global custom_hospital_locations for patient/driver mapping
+            const customLocations = {
+                'h1': {
+                    name: editForm.name,
+                    address: editForm.address,
+                    coords: { lat: parseFloat(editForm.lat) || 28.6288, lng: parseFloat(editForm.lng) || 77.3662 },
+                    bedsAvailable: editForm.bedsAvailable,
+                    facilities: editForm.facilities
+                }
+            };
+            localStorage.setItem('custom_hospital_locations', JSON.stringify(customLocations));
+            window.dispatchEvent(new Event('storage'));
+
             setIsEditing(false);
             setLoadingState(false);
-            setSuccessMsg('Hospital details updated successfully!');
+            setSuccessMsg('Hospital details and location updated successfully!');
             setTimeout(() => setSuccessMsg(''), 3000);
         }, 800);
     };
@@ -369,18 +551,18 @@ function HospitalDashboard() {
                         Patient Routing
                     </div>
                     <div 
-                        onClick={() => setActiveTab('network')}
+                        onClick={() => setActiveTab('location')}
                         style={{ 
                             padding: '12px 16px', 
                             borderRadius: '12px', 
                             display: 'flex', alignItems: 'center', gap: '12px', 
                             fontWeight: '600', cursor: 'pointer',
-                            background: activeTab === 'network' ? '#eff6ff' : 'transparent',
-                            color: activeTab === 'network' ? '#1d4ed8' : 'var(--text-secondary)'
+                            background: activeTab === 'location' ? '#eff6ff' : 'transparent',
+                            color: activeTab === 'location' ? '#1d4ed8' : 'var(--text-secondary)'
                         }}
                     >
-                        <Settings size={20} />
-                        Network Settings
+                        <MapPin size={20} />
+                        Location & Profile
                     </div>
                 </nav>
 
@@ -677,13 +859,24 @@ function HospitalDashboard() {
                                             </div>
 
                                             {/* Live Route Map Tracker */}
-                                            <div className="w-full lg:w-[280px] bg-slate-950 border border-slate-800 rounded-2xl p-4 flex flex-col justify-between h-[280px]">
+                                            <div className="w-full lg:w-[280px] bg-slate-950 border border-slate-800 rounded-2xl p-4 flex flex-col justify-between h-[280px] relative">
+                                                
+                                                {/* Floating Theme Toggle inside Hospital Mini Tracker */}
+                                                <button 
+                                                    onClick={() => setMapTheme(prev => prev === 'dark' ? 'light' : 'dark')}
+                                                    className="absolute top-6 right-6 z-10 p-1.5 rounded-xl border bg-slate-900/90 border-slate-700 text-slate-100 hover:bg-slate-800 shadow-md backdrop-blur-sm transition-all"
+                                                    title={mapTheme === 'dark' ? "Switch to Bright Map" : "Switch to Dark Map"}
+                                                    style={{ height: '28px', width: '28px', display: 'flex', alignItems: 'center', justifyContent: 'center' }}
+                                                >
+                                                    {mapTheme === 'dark' ? <Sun size={12} className="text-amber-400" /> : <Moon size={12} className="text-slate-400" />}
+                                                </button>
+
                                                 <div>
                                                     <div className="flex justify-between items-center mb-3">
                                                         <h4 className="text-[10px] font-black text-slate-400 uppercase tracking-widest flex items-center gap-1">
                                                             <Truck size={12} className="text-red-500" /> Ambulance GPS
                                                         </h4>
-                                                        <span className="text-[9px] font-bold px-2 py-0.5 bg-red-950/60 text-red-400 rounded-full border border-red-900/40 animate-pulse">
+                                                        <span className="text-[9px] font-bold px-2 py-0.5 bg-red-950/60 text-red-400 rounded-full border border-red-900/40 animate-pulse mr-8">
                                                             Live Tracker
                                                         </span>
                                                     </div>
@@ -706,6 +899,25 @@ function HospitalDashboard() {
                                                     <span className="font-black text-red-400 text-xs flex items-center gap-1">
                                                         <Clock size={11} /> {eta > 0 ? `~${eta} mins` : 'ARRIVED'}
                                                     </span>
+                                                </div>
+
+                                                <div style={{ marginTop: '6px', textAlign: 'center' }}>
+                                                    <a 
+                                                        href="/driver" 
+                                                        target="_blank" 
+                                                        rel="noreferrer" 
+                                                        style={{ 
+                                                            fontSize: '9px', 
+                                                            fontWeight: 'bold', 
+                                                            color: '#fca5a5', 
+                                                            textDecoration: 'underline', 
+                                                            display: 'inline-flex', 
+                                                            alignItems: 'center', 
+                                                            gap: '3px' 
+                                                        }}
+                                                    >
+                                                        Launch Driver HUD ↗
+                                                    </a>
                                                 </div>
                                             </div>
 
@@ -786,17 +998,138 @@ function HospitalDashboard() {
                         </motion.div>
                     )}
 
-                    {activeTab === 'network' && (
-                        <motion.div initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }}>
+                    {activeTab === 'location' && (
+                        <motion.div initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} className="space-y-6">
                             <div style={{ marginBottom: '32px' }}>
-                                <h1 style={{ fontSize: '2rem', fontWeight: '700', color: 'var(--text-primary)', margin: '0 0 8px 0' }}>Network Settings</h1>
-                                <p style={{ color: 'var(--text-secondary)', margin: 0, fontSize: '1.1rem' }}>Manage connections with sister clinics and external referral logic.</p>
+                                <h1 style={{ fontSize: '2rem', fontWeight: '700', color: 'var(--text-primary)', margin: '0 0 8px 0' }}>Hospital Location & Profile</h1>
+                                <p style={{ color: 'var(--text-secondary)', margin: 0, fontSize: '1.1rem' }}>Configure your clinic's physical address, beds availability, and coordinates on the live navigation system.</p>
                             </div>
                             
-                            <div className="card" style={{ padding: '32px', textAlign: 'center' }}>
-                                <Settings size={48} color="#9ca3af" style={{ margin: '0 auto 16px' }} />
-                                <h3 style={{ color: 'var(--text-primary)', margin: '0 0 8px 0' }}>Network Configuration</h3>
-                                <p style={{ color: 'var(--text-secondary)', margin: 0 }}>Cross-hospital connectivity settings will be available in Phase 2 of the architecture rollout.</p>
+                            {/* Success Toast */}
+                            <AnimatePresence>
+                                {successMsg && (
+                                    <motion.div
+                                        initial={{ opacity: 0, y: -10 }}
+                                        animate={{ opacity: 1, y: 0 }}
+                                        exit={{ opacity: 0, y: -10 }}
+                                        style={{ background: '#dcfce7', color: '#166534', padding: '16px', borderRadius: '12px', marginBottom: '24px', display: 'flex', alignItems: 'center', gap: '12px', fontWeight: '500' }}
+                                    >
+                                        <CheckCircle size={20} />
+                                        {successMsg}
+                                    </motion.div>
+                                )}
+                            </AnimatePresence>
+
+                            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '32px' }}>
+                                
+                                {/* Form Inputs */}
+                                <div className="card" style={{ padding: '32px', display: 'flex', flexDirection: 'column', gap: '20px' }}>
+                                    <h3 style={{ margin: '0 0 8px 0', fontSize: '1.2rem', fontWeight: '700', color: 'var(--text-primary)' }}>Profile Info</h3>
+                                    
+                                    <div className="input-group" style={{ margin: 0 }}>
+                                        <label style={{ fontWeight: '600' }}>Hospital Name</label>
+                                        <input 
+                                            type="text" 
+                                            value={editForm.name} 
+                                            onChange={(e) => setEditForm({ ...editForm, name: e.target.value })}
+                                            style={{ paddingLeft: '16px', backgroundColor: '#f9fafb' }}
+                                        />
+                                    </div>
+
+                                    <div className="input-group" style={{ margin: 0 }}>
+                                        <label style={{ fontWeight: '600' }}>Physical Address</label>
+                                        <div style={{ display: 'flex', gap: '12px' }}>
+                                            <input 
+                                                type="text" 
+                                                value={editForm.address} 
+                                                onChange={(e) => setEditForm({ ...editForm, address: e.target.value })}
+                                                placeholder="Street, City, Postal Code..."
+                                                style={{ paddingLeft: '16px', backgroundColor: '#f9fafb', flex: 1 }}
+                                            />
+                                            <button 
+                                                onClick={searchConfigAddress}
+                                                className="btn-secondary"
+                                                style={{ padding: '0 16px', fontSize: '0.8rem', fontWeight: '700' }}
+                                            >
+                                                Pinpoint
+                                            </button>
+                                        </div>
+                                    </div>
+
+                                    <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '16px' }}>
+                                        <div className="input-group" style={{ margin: 0 }}>
+                                            <label style={{ fontWeight: '600' }}>Latitude</label>
+                                            <input 
+                                                type="number" 
+                                                step="any"
+                                                value={editForm.lat} 
+                                                onChange={(e) => setEditForm({ ...editForm, lat: parseFloat(e.target.value) || 0 })}
+                                                style={{ paddingLeft: '16px', backgroundColor: '#f9fafb' }}
+                                            />
+                                        </div>
+                                        <div className="input-group" style={{ margin: 0 }}>
+                                            <label style={{ fontWeight: '600' }}>Longitude</label>
+                                            <input 
+                                                type="number" 
+                                                step="any"
+                                                value={editForm.lng} 
+                                                onChange={(e) => setEditForm({ ...editForm, lng: parseFloat(e.target.value) || 0 })}
+                                                style={{ paddingLeft: '16px', backgroundColor: '#f9fafb' }}
+                                            />
+                                        </div>
+                                    </div>
+
+                                    <div className="input-group" style={{ margin: 0 }}>
+                                        <label style={{ fontWeight: '600' }}>Operational Beds Count</label>
+                                        <input 
+                                            type="number" 
+                                            value={editForm.bedsAvailable} 
+                                            onChange={(e) => setEditForm({ ...editForm, bedsAvailable: parseInt(e.target.value) || 0 })}
+                                            style={{ paddingLeft: '16px', backgroundColor: '#f9fafb' }}
+                                        />
+                                    </div>
+
+                                    <button 
+                                        onClick={handleSave} 
+                                        className="btn" 
+                                        style={{ marginTop: '16px', background: '#4f46e5', borderColor: '#4f46e5', display: 'flex', alignItems: 'center', justify: 'center', gap: '8px' }}
+                                        disabled={isLoading}
+                                    >
+                                        {isLoading ? 'Saving...' : <><Save size={18} /> Save Profile & GPS</>}
+                                    </button>
+                                </div>
+
+                                {/* Interactive Map Configurator */}
+                                <div className="card" style={{ padding: '24px', display: 'flex', flexDirection: 'column', height: '480px', position: 'relative', overflow: 'hidden' }}>
+                                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '16px' }}>
+                                        <h3 style={{ margin: 0, fontSize: '1.1rem', fontWeight: '700', color: 'var(--text-primary)' }}>GPS Coordinates Map</h3>
+                                        
+                                        {/* Bright Map Toggle */}
+                                        <button 
+                                            onClick={() => setMapTheme(prev => prev === 'dark' ? 'light' : 'dark')}
+                                            style={{
+                                                padding: '6px 12px', borderRadius: '8px', border: '1px solid #e5e7eb',
+                                                background: mapTheme === 'dark' ? '#1f2937' : '#f9fafb',
+                                                color: mapTheme === 'dark' ? 'white' : '#1f2937',
+                                                fontSize: '0.7rem', fontWeight: 'bold', cursor: 'pointer',
+                                                display: 'flex', alignItems: 'center', gap: '4px'
+                                            }}
+                                        >
+                                            {mapTheme === 'dark' ? <Sun size={12} style={{ color: '#fbbf24' }} /> : <Moon size={12} style={{ color: '#4f46e5' }} />}
+                                            {mapTheme === 'dark' ? 'Bright Map' : 'Dark Map'}
+                                        </button>
+                                    </div>
+
+                                    {/* Map Container */}
+                                    <div style={{ flex: 1, position: 'relative', borderRadius: '12px', overflow: 'hidden', border: '1px solid #e5e7eb' }}>
+                                        <div ref={configMapRef} style={{ position: 'absolute', inset: 0, zIndex: 0 }} />
+                                    </div>
+
+                                    <div style={{ marginTop: '16px', background: '#f3f4f6', padding: '12px', borderRadius: '12px', fontSize: '0.75rem', color: '#4b5563', lineHeight: '1.4' }}>
+                                        💡 **Tip**: You can drag the red hospital pin on the map to set your hospital location precisely. The latitude and longitude will update automatically.
+                                    </div>
+                                </div>
+
                             </div>
                         </motion.div>
                     )}

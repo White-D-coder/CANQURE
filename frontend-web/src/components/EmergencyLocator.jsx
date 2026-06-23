@@ -2,7 +2,7 @@ import React, { useState, useEffect, useRef } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { 
     AlertTriangle, MapPin, Navigation, Phone, CheckCircle, 
-    Clock, Bed, Loader2, ShieldAlert, Search, Crosshair, Compass
+    Clock, Bed, Loader2, ShieldAlert, Search, Crosshair, Compass, Sun, Moon
 } from 'lucide-react';
 import api from '../api/axios';
 
@@ -37,20 +37,54 @@ const EmergencyLocator = ({ user }) => {
     const [searchAddress, setSearchAddress] = useState('');
     const [isGeocoding, setIsGeocoding] = useState(false);
     const [currentAddress, setCurrentAddress] = useState('Pinpointing Location...');
-    const [patientCoords, setPatientCoords] = useState({ lat: 28.6272, lng: 77.3726 }); // Sector 62 Noida Default
+    const [patientCoords, setPatientCoords] = useState({ lat: 28.6272, lng: 77.3726 }); // Default Noida
     const [selectedHospital, setSelectedHospital] = useState(null);
+    const [mapTheme, setMapTheme] = useState('dark'); // 'dark' or 'light'
+    const [routingCoords, setRoutingCoords] = useState([]);
+    const [ambulancePos, setAmbulancePos] = useState(null);
 
     // Leaflet refs
     const mapRef = useRef(null);
     const mapInstance = useRef(null);
+    const tileLayerRef = useRef(null);
     const markersGroup = useRef(null);
     const routeLine = useRef(null);
     const LRef = useRef(null);
 
-    // Fetch user's real location on mount
+    // Dynamic hospital offset configurations
+    const hospitalLocations = {
+        'h1': { lat: 28.6288, lng: 77.3662, name: 'Medanta Cancer Care Center' },
+        'h2': { lat: 28.6241, lng: 77.3792, name: 'Fortis Hospital Oncology Wing' },
+        'h3': { lat: 28.6365, lng: 77.3451, name: 'Max Super Speciality Hospital' },
+        'h4': { lat: 28.5672, lng: 77.2100, name: 'AIIMS Cancer Institute' },
+    };
+
     useEffect(() => {
         acquireRealLocation();
     }, []);
+
+    useEffect(() => {
+        const handleStorageChange = () => {
+            const savedAmb = localStorage.getItem('active_ambulance_pos');
+            if (savedAmb) {
+                setAmbulancePos(JSON.parse(savedAmb));
+            } else {
+                setAmbulancePos(null);
+            }
+        };
+        window.addEventListener('storage', handleStorageChange);
+        handleStorageChange();
+        return () => window.removeEventListener('storage', handleStorageChange);
+    }, []);
+
+    // Handle map theme switching (Dark Matter vs Positron)
+    useEffect(() => {
+        if (tileLayerRef.current && mapInstance.current) {
+            const darkUrl = 'https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png';
+            const lightUrl = 'https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png';
+            tileLayerRef.current.setUrl(mapTheme === 'dark' ? darkUrl : lightUrl);
+        }
+    }, [mapTheme]);
 
     // Initialize/Update Leaflet Map
     useEffect(() => {
@@ -60,14 +94,16 @@ const EmergencyLocator = ({ user }) => {
             LRef.current = L;
             if (!mapRef.current) return;
 
-            // Initialize map if not exists
             if (!mapInstance.current) {
                 mapInstance.current = L.map(mapRef.current, {
                     zoomControl: false,
                     attributionControl: false
                 }).setView([patientCoords.lat, patientCoords.lng], 13);
 
-                L.tileLayer('https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png', {
+                const darkUrl = 'https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png';
+                const lightUrl = 'https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png';
+                
+                tileLayerRef.current = L.tileLayer(mapTheme === 'dark' ? darkUrl : lightUrl, {
                     maxZoom: 19
                 }).addTo(mapInstance.current);
 
@@ -82,9 +118,9 @@ const EmergencyLocator = ({ user }) => {
                 routeLine.current.remove();
             }
         };
-    }, [loading, patientCoords, selectedHospital, dispatched, hospitals]);
+    }, [loading, patientCoords, selectedHospital, dispatched, hospitals, routingCoords, ambulancePos]);
 
-    // Redraw markers and routes on map
+    // Redraw markers and routing path on map
     const renderMapLayers = () => {
         const L = LRef.current;
         const map = mapInstance.current;
@@ -142,27 +178,20 @@ const EmergencyLocator = ({ user }) => {
             });
         });
 
-        // 3. Draw Red Animated Route Line
-        if (selectedHospital) {
-            const pathCoordinates = [
-                [patientCoords.lat, patientCoords.lng],
-                [patientCoords.lat, selectedHospital.coords.lng],
-                [selectedHospital.coords.lat, selectedHospital.coords.lng]
-            ];
-
+        // 3. Draw Red OSRM Driving Route Line
+        if (selectedHospital && routingCoords.length > 0) {
             const routeColor = dispatched?.id === selectedHospital.id ? '#10b981' : '#ef4444';
 
-            routeLine.current = L.polyline(pathCoordinates, {
+            routeLine.current = L.polyline(routingCoords, {
                 color: routeColor,
-                weight: 4,
-                opacity: 0.8,
-                dashArray: '8, 6',
+                weight: 5,
+                opacity: 0.85,
+                dashArray: '10, 8',
                 className: 'route-path-animation'
             }).addTo(map);
 
-            map.fitBounds(L.latLngBounds(pathCoordinates), {
-                padding: [50, 50],
-                maxZoom: 15
+            map.fitBounds(L.latLngBounds(routingCoords), {
+                padding: [50, 50]
             });
         } else {
             const allCoords = [
@@ -170,6 +199,20 @@ const EmergencyLocator = ({ user }) => {
                 ...hospitals.map(h => [h.coords.lat, h.coords.lng])
             ];
             map.fitBounds(L.latLngBounds(allCoords), { padding: [40, 40] });
+        }
+
+        // 4. Ambulance Marker (Moving red truck icon)
+        if (dispatched && ambulancePos) {
+            const ambulanceHtml = `
+                <div class="relative flex items-center justify-center">
+                    <span class="animate-ping absolute inline-flex h-8 w-8 rounded-full bg-red-400 opacity-60"></span>
+                    <div class="w-7 h-7 rounded-full bg-red-600 text-white flex items-center justify-center border border-white shadow-lg">
+                        <svg xmlns="http://www.w3.org/2000/svg" width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" class="lucide lucide-truck"><path d="M14 18V6a2 2 0 0 0-2-2H4a2 2 0 0 0-2 2v11a1 1 0 0 0 1 1h2"/><path d="M19 18h2a1 1 0 0 0 1-1v-5.5a1.5 1.5 0 0 0-.5-1.1L18 7h-4"/><circle cx="7" cy="18" r="2"/><circle cx="17" cy="18" r="2"/></svg>
+                    </div>
+                </div>
+            `;
+            const ambulanceIcon = L.divIcon({ html: ambulanceHtml, iconSize: [28, 28], iconAnchor: [14, 14] });
+            L.marker([ambulancePos.lat, ambulancePos.lng], { icon: ambulanceIcon }).addTo(group);
         }
     };
 
@@ -209,7 +252,6 @@ const EmergencyLocator = ({ user }) => {
             const res = await fetch(`https://nominatim.openstreetmap.org/reverse?format=json&lat=${lat}&lon=${lng}&zoom=18&addressdetails=1`);
             const data = await res.json();
             if (data && data.display_name) {
-                // Shorten address for clean display
                 const parts = data.display_name.split(',');
                 const shortAddr = parts.slice(0, 3).join(',');
                 setCurrentAddress(shortAddr);
@@ -246,6 +288,7 @@ const EmergencyLocator = ({ user }) => {
                 
                 fetchHospitals(newCoords);
                 setSelectedHospital(null);
+                setRoutingCoords([]);
             } else {
                 alert("Location not found. Please try a different query.");
             }
@@ -264,25 +307,39 @@ const EmergencyLocator = ({ user }) => {
                 headers: { Authorization: `Bearer ${token}` }
             });
 
-            // Dynamically cluster hospitals around user's real location (1-5km radius)
+            // Read custom locations saved by hospital admins
+            const customLocsRaw = localStorage.getItem('custom_hospital_locations');
+            const customLocs = customLocsRaw ? JSON.parse(customLocsRaw) : {};
+
+            // Dynamically cluster hospitals around user's real location, or use admin-configured coordinates
             const processed = res.data.map((h, i) => {
-                const angle = (i * 2 * Math.PI) / res.data.length;
-                // 0.009 degrees of lat/lng is roughly 1km
-                const radius = 0.008 + (Math.random() * 0.015);
-                const hLoc = {
-                    lat: coords.lat + radius * Math.sin(angle),
-                    lng: coords.lng + radius * Math.cos(angle)
-                };
+                let hLoc;
+                let hName = h.name;
+                let hBeds = h.bedsAvailable;
+
+                if (customLocs[h.id]) {
+                    hLoc = customLocs[h.id].coords;
+                    hName = customLocs[h.id].name || h.name;
+                    hBeds = customLocs[h.id].bedsAvailable !== undefined ? customLocs[h.id].bedsAvailable : h.bedsAvailable;
+                } else {
+                    const angle = (i * 2 * Math.PI) / res.data.length;
+                    const radius = 0.008 + (Math.random() * 0.015);
+                    hLoc = {
+                        lat: coords.lat + radius * Math.sin(angle),
+                        lng: coords.lng + radius * Math.cos(angle)
+                    };
+                }
 
                 const distanceVal = calculateHaversineDistance(coords.lat, coords.lng, hLoc.lat, hLoc.lng);
                 
                 return {
                     ...h,
+                    name: hName,
                     distance: distanceVal.toFixed(1),
-                    bedsAvailable: h.bedsAvailable || Math.floor(Math.random() * 40 + 5),
+                    bedsAvailable: hBeds || Math.floor(Math.random() * 40 + 5),
                     phone: h.phone || `+91 99${Math.floor(Math.random() * 9000000 + 1000000)}`,
                     specialty: h.specialty || ['Oncology ER', 'Cancer Care', 'Multi-Specialty Oncology'][i % 3],
-                    wait: `${Math.floor(distanceVal * 2 + 4)} min`,
+                    wait: `${Math.floor(distanceVal * 1.8 + 4)} min`,
                     coords: hLoc
                 };
             }).sort((a, b) => parseFloat(a.distance) - parseFloat(b.distance));
@@ -290,7 +347,6 @@ const EmergencyLocator = ({ user }) => {
             setHospitals(processed);
         } catch (error) {
             console.error('Error fetching hospitals:', error);
-            // Fallback mock hospitals clustered around user's location
             const mockData = [
                 { id: 'h1', name: 'Medanta Cancer Care Center', bedsAvailable: 12, phone: '+91 99991 11111', specialty: 'Oncology ER' },
                 { id: 'h2', name: 'Fortis Hospital Oncology Wing', bedsAvailable: 6, phone: '+91 88882 22222', specialty: 'Cancer Care' },
@@ -298,18 +354,34 @@ const EmergencyLocator = ({ user }) => {
                 { id: 'h4', name: 'AIIMS Cancer Institute', bedsAvailable: 30, phone: '+91 66664 44444', specialty: 'Oncology ER' },
             ];
 
+            const customLocsRaw = localStorage.getItem('custom_hospital_locations');
+            const customLocs = customLocsRaw ? JSON.parse(customLocsRaw) : {};
+
             const processed = mockData.map((h, i) => {
-                const angle = (i * 2 * Math.PI) / mockData.length;
-                const radius = 0.008 + (Math.random() * 0.015);
-                const hLoc = {
-                    lat: coords.lat + radius * Math.sin(angle),
-                    lng: coords.lng + radius * Math.cos(angle)
-                };
+                let hLoc;
+                let hName = h.name;
+                let hBeds = h.bedsAvailable;
+
+                if (customLocs[h.id]) {
+                    hLoc = customLocs[h.id].coords;
+                    hName = customLocs[h.id].name || h.name;
+                    hBeds = customLocs[h.id].bedsAvailable !== undefined ? customLocs[h.id].bedsAvailable : h.bedsAvailable;
+                } else {
+                    const angle = (i * 2 * Math.PI) / mockData.length;
+                    const radius = 0.008 + (Math.random() * 0.015);
+                    hLoc = {
+                        lat: coords.lat + radius * Math.sin(angle),
+                        lng: coords.lng + radius * Math.cos(angle)
+                    };
+                }
+
                 const distanceVal = calculateHaversineDistance(coords.lat, coords.lng, hLoc.lat, hLoc.lng);
                 return {
                     ...h,
+                    name: hName,
                     distance: distanceVal.toFixed(1),
-                    wait: `${Math.floor(distanceVal * 2 + 4)} min`,
+                    bedsAvailable: hBeds,
+                    wait: `${Math.floor(distanceVal * 1.8 + 4)} min`,
                     coords: hLoc
                 };
             }).sort((a, b) => parseFloat(a.distance) - parseFloat(b.distance));
@@ -336,10 +408,38 @@ const EmergencyLocator = ({ user }) => {
         acquireRealLocation();
         setSearchAddress('');
         setSelectedHospital(null);
+        setRoutingCoords([]);
     };
 
-    const handleSelectHospital = (hospital) => {
+    // Calculate real street route via Open Source Routing Machine (OSRM) API
+    const handleSelectHospital = async (hospital) => {
         setSelectedHospital(hospital);
+        
+        try {
+            // Call OSRM route engine to find driving route along streets
+            const res = await fetch(`https://router.project-osrm.org/route/v1/driving/${patientCoords.lng},${patientCoords.lat};${hospital.coords.lng},${hospital.coords.lat}?overview=full&geometries=geojson`);
+            const data = await res.json();
+            if (data && data.routes && data.routes.length > 0) {
+                const geojsonCoords = data.routes[0].geometry.coordinates;
+                // Convert GeoJSON [lng, lat] to Leaflet [lat, lng]
+                const leafletCoords = geojsonCoords.map(coord => [coord[1], coord[0]]);
+                setRoutingCoords(leafletCoords);
+            } else {
+                // Fallback straight lines route
+                setRoutingCoords([
+                    [patientCoords.lat, patientCoords.lng],
+                    [patientCoords.lat, hospital.coords.lng],
+                    [hospital.coords.lat, hospital.coords.lng]
+                ]);
+            }
+        } catch (err) {
+            console.warn("OSRM routing failed, drawing straight routing segments instead.", err);
+            setRoutingCoords([
+                [patientCoords.lat, patientCoords.lng],
+                [patientCoords.lat, hospital.coords.lng],
+                [hospital.coords.lat, hospital.coords.lng]
+            ]);
+        }
     };
 
     const requestEmergency = async (hospital) => {
@@ -356,7 +456,6 @@ const EmergencyLocator = ({ user }) => {
             setDispatched(hospital);
             setSuccessMsg(`Emergency dispatched to ${hospital.name}. Trauma bay notified.`);
             
-            // Save dispatch coordinates to local storage for cross-tab hospital dashboard sync
             const sosData = {
                 patientId: user?.id || 'demo-patient-id',
                 patientName: user?.name || 'John Patient',
@@ -364,7 +463,7 @@ const EmergencyLocator = ({ user }) => {
                 hospitalName: hospital.name,
                 address: currentAddress,
                 coordinates: patientCoords,
-                routeCoordinates: [
+                routeCoordinates: routingCoords.length > 0 ? routingCoords : [
                     [patientCoords.lat, patientCoords.lng],
                     [patientCoords.lat, hospital.coords.lng],
                     [hospital.coords.lat, hospital.coords.lng]
@@ -476,9 +575,19 @@ const EmergencyLocator = ({ user }) => {
                             <div className="w-12 h-12 rounded-2xl bg-emerald-50 text-emerald-600 flex items-center justify-center border border-emerald-100">
                                 <CheckCircle size={22} />
                             </div>
-                            <div className="flex-1">
-                                <p className="font-bold text-slate-900">{dispatched.name}</p>
-                                <p className="text-xs text-slate-500 mt-0.5">Ambulance dispatch broadcasted · Trauma Bay preparing · Current location: {currentAddress}</p>
+                            <div className="flex-1 flex flex-col md:flex-row md:items-center justify-between gap-4">
+                                <div>
+                                    <p className="font-bold text-slate-900">{dispatched.name}</p>
+                                    <p className="text-xs text-slate-500 mt-0.5">Ambulance dispatch broadcasted · Trauma Bay preparing · Current location: {currentAddress}</p>
+                                </div>
+                                <a 
+                                    href="/driver" 
+                                    target="_blank" 
+                                    rel="noreferrer" 
+                                    className="px-4 py-2 bg-red-50 hover:bg-red-100 text-red-600 rounded-xl text-xs font-bold transition-all border border-red-200 flex items-center justify-center gap-1.5 self-start md:self-auto shadow-sm"
+                                >
+                                    <Navigation size={13} className="text-red-500" /> Open Driver HUD ↗
+                                </a>
                             </div>
                         </div>
                         <div className="mt-4 grid grid-cols-3 gap-3 text-center">
@@ -500,14 +609,15 @@ const EmergencyLocator = ({ user }) => {
             {/* Map and Hospital List Layout */}
             <div className="grid grid-cols-1 lg:grid-cols-5 gap-6">
 
-                {/* Real Dark Map (CartoDB Dark Matter Theme) */}
+                {/* Real Map (With toggle bright/dark options) */}
                 <div className="lg:col-span-3 bg-slate-950 border border-slate-800 rounded-3xl overflow-hidden h-[440px] relative shadow-lg">
-                    <div ref={mapRef} className="absolute inset-0 z-0 h-full w-full bg-slate-950" />
+                    {/* Map container */}
+                    <div ref={mapRef} className="absolute inset-0 z-0 h-full w-full" />
 
                     <style>{`
                         .route-path-animation {
                             stroke-dasharray: 10, 8;
-                            animation: dashRoute 12s linear infinite;
+                            animation: dashRoute 8s linear infinite;
                         }
                         @keyframes dashRoute {
                             to {
@@ -515,7 +625,7 @@ const EmergencyLocator = ({ user }) => {
                             }
                         }
                         .leaflet-container {
-                            background-color: #020617 !important;
+                            background-color: ${mapTheme === 'dark' ? '#020617' : '#f8fafc'} !important;
                             font-family: inherit !important;
                         }
                         .leaflet-div-icon {
@@ -524,10 +634,28 @@ const EmergencyLocator = ({ user }) => {
                         }
                     `}</style>
 
+                    {/* Floating Bright/Dark theme toggle */}
+                    <button 
+                        onClick={() => setMapTheme(prev => prev === 'dark' ? 'light' : 'dark')}
+                        className={`absolute top-4 right-4 z-10 p-2.5 rounded-2xl border font-bold text-xs flex items-center gap-1.5 shadow-lg backdrop-blur-md transition-all ${
+                            mapTheme === 'dark' 
+                            ? 'bg-slate-900/90 border-slate-700 text-slate-100 hover:bg-slate-800' 
+                            : 'bg-white/95 border-slate-200 text-slate-800 hover:bg-slate-50'
+                        }`}
+                        title={mapTheme === 'dark' ? "Switch to Bright Map" : "Switch to Dark Map"}
+                    >
+                        {mapTheme === 'dark' ? <Sun size={15} className="text-amber-400" /> : <Moon size={15} className="text-slate-600" />}
+                        {mapTheme === 'dark' ? 'Bright Map' : 'Dark Map'}
+                    </button>
+
                     {/* Map Labels / Legend */}
-                    <div className="absolute top-4 left-4 bg-slate-900/95 backdrop-blur-sm border border-slate-800 rounded-2xl shadow-lg p-4 space-y-1 text-[10px] font-semibold text-slate-400 z-10 pointer-events-none">
-                        <div className="text-white text-[11px] font-black mb-1 flex items-center gap-1.5">
-                            <Compass size={12} className="text-indigo-400" /> Navigation Legend
+                    <div className={`absolute top-4 left-4 border rounded-2xl shadow-lg p-4 space-y-1.5 text-[10px] font-semibold z-10 pointer-events-none transition-all ${
+                        mapTheme === 'dark' 
+                        ? 'bg-slate-900/95 border-slate-800 text-slate-400' 
+                        : 'bg-white/95 border-slate-200 text-slate-500'
+                    }`}>
+                        <div className={`text-[11px] font-black mb-1 flex items-center gap-1.5 ${mapTheme === 'dark' ? 'text-white' : 'text-slate-900'}`}>
+                            <Compass size={12} className="text-indigo-500" /> Navigation Legend
                         </div>
                         <div className="flex items-center gap-2"><div className="w-2.5 h-2.5 rounded-full bg-indigo-500" /> Patient Location</div>
                         <div className="flex items-center gap-2"><div className="w-2.5 h-2.5 rounded-full bg-red-600" /> Oncology ER (Ready)</div>
@@ -539,8 +667,12 @@ const EmergencyLocator = ({ user }) => {
                         )}
                     </div>
 
-                    <div className="absolute bottom-4 left-4 bg-slate-900/95 backdrop-blur-sm px-3.5 py-2.5 rounded-xl border border-slate-800 text-[10px] text-slate-300 font-semibold shadow-lg z-10 pointer-events-none">
-                        <span className="text-indigo-400 font-bold">Address:</span> {currentAddress}
+                    <div className={`absolute bottom-4 left-4 px-3.5 py-2.5 rounded-xl border text-[10px] font-semibold shadow-lg z-10 pointer-events-none transition-all ${
+                        mapTheme === 'dark' 
+                        ? 'bg-slate-900/95 border-slate-800 text-slate-300' 
+                        : 'bg-white/95 border-slate-200 text-slate-700'
+                    }`}>
+                        <span className="text-indigo-500 font-bold">Address:</span> {currentAddress}
                     </div>
                 </div>
 

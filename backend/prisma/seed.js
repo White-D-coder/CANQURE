@@ -4,8 +4,104 @@ import bcrypt from 'bcryptjs';
 const prisma = new PrismaClient();
 
 async function main() {
-  console.log('Start seeding ...');
+  console.log('Start seeding new schema...');
 
+  // 1. Clean Database
+  console.log('Cleaning old records...');
+  await prisma.refillOrder.deleteMany().catch(() => {});
+  await prisma.medicine.deleteMany().catch(() => {});
+  await prisma.cancerType.deleteMany().catch(() => {});
+  await prisma.appointment.deleteMany().catch(() => {});
+  await prisma.timeSlot.deleteMany().catch(() => {});
+  await prisma.sosAlert.deleteMany().catch(() => {});
+  await prisma.admin.deleteMany().catch(() => {});
+  await prisma.doctor.deleteMany().catch(() => {});
+  await prisma.hospital.deleteMany().catch(() => {});
+  await prisma.pharmacy.deleteMany().catch(() => {});
+  await prisma.user.deleteMany().catch(() => {});
+
+  // 2. Seed Hospitals
+  console.log('Seeding hospitals...');
+  const medanta = await prisma.hospital.create({
+    data: {
+      name: 'Medanta Cancer Institute',
+      address: 'Medanta - The Medicity, Sector 38, Gurugram',
+      city: 'Gurugram',
+      contact: '+91 124 414 1414',
+      email: 'info@medanta.org',
+      bedsAvailable: 25,
+      facilities: ['Chemotherapy', 'Surgical Oncology', 'ICU', 'Ambulance Service'],
+      latitude: 28.4312,
+      longitude: 77.0423
+    }
+  });
+
+  const fortis = await prisma.hospital.create({
+    data: {
+      name: 'Fortis Memorial Research Institute',
+      address: 'Sector 44, opposite HUDA City Centre, Gurugram',
+      city: 'Gurugram',
+      contact: '+91 124 496 2200',
+      email: 'fmri@fortishealthcare.com',
+      bedsAvailable: 18,
+      facilities: ['Radiation Oncology', 'ICU', 'Chemotherapy', 'Emergency Response'],
+      latitude: 28.4595,
+      longitude: 77.0726
+    }
+  });
+
+  const max = await prisma.hospital.create({
+    data: {
+      name: 'Max Super Speciality Hospital',
+      address: '1 & 2, Press Enclave Road, Saket, New Delhi',
+      city: 'New Delhi',
+      contact: '+91 11 2651 5050',
+      email: 'saket@maxhealthcare.com',
+      bedsAvailable: 30,
+      facilities: ['Immunotherapy', 'Surgical Oncology', 'Oncology ER'],
+      latitude: 28.5284,
+      longitude: 77.2198
+    }
+  });
+
+  console.log('Seeded 3 oncology-capable hospitals.');
+
+  // 3. Seed Pharmacies
+  console.log('Seeding pharmacies...');
+  const apolloPharmacy = await prisma.pharmacy.create({
+    data: {
+      name: 'Apollo Pharmacy',
+      address: 'Greater Kailash II, New Delhi',
+      contact: '+91 11 4050 6070',
+      latitude: 28.5355,
+      longitude: 77.2631
+    }
+  });
+
+  const medplusPharmacy = await prisma.pharmacy.create({
+    data: {
+      name: 'MedPlus Chemist',
+      address: 'Sector 15, Gurugram',
+      contact: '+91 124 400 5000',
+      latitude: 28.4595,
+      longitude: 77.0266
+    }
+  });
+
+  const fortisPharmacy = await prisma.pharmacy.create({
+    data: {
+      name: 'Fortis Medstore',
+      address: 'Saket, New Delhi',
+      contact: '+91 11 4166 7788',
+      latitude: 28.5300,
+      longitude: 77.2000
+    }
+  });
+
+  console.log('Seeded 3 partner pharmacies.');
+
+  // 4. Seed Doctors
+  console.log('Seeding doctors...');
   const doctorsData = [
     {
       name: 'Dr. Sarah Wilson',
@@ -13,7 +109,8 @@ async function main() {
       specialist: 'Oncologist',
       experience: 15,
       email: 'sarah.wilson@medcan.com',
-      password: 'password123'
+      password: 'password123',
+      hospitalId: medanta.id
     },
     {
       name: 'Dr. James Chen',
@@ -21,7 +118,8 @@ async function main() {
       specialist: 'Hematologist',
       experience: 12,
       email: 'james.chen@medcan.com',
-      password: 'password123'
+      password: 'password123',
+      hospitalId: fortis.id
     },
     {
       name: 'Dr. Emily Rodriguez',
@@ -29,7 +127,8 @@ async function main() {
       specialist: 'Radiation Oncologist',
       experience: 10,
       email: 'emily.rodriguez@medcan.com',
-      password: 'password123'
+      password: 'password123',
+      hospitalId: max.id
     },
     {
       name: 'Dr. Michael Chang',
@@ -37,7 +136,8 @@ async function main() {
       specialist: 'Surgical Oncologist',
       experience: 20,
       email: 'michael.chang@medcan.com',
-      password: 'password123'
+      password: 'password123',
+      hospitalId: medanta.id
     },
     {
       name: 'Dr. Lisa Patel',
@@ -45,7 +145,8 @@ async function main() {
       specialist: 'Pediatric Oncologist',
       experience: 8,
       email: 'lisa.patel@medcan.com',
-      password: 'password123'
+      password: 'password123',
+      hospitalId: fortis.id
     }
   ];
 
@@ -65,92 +166,74 @@ async function main() {
 
   for (const doc of doctorsData) {
     const hashedPassword = await bcrypt.hash(doc.password, 10);
-    const doctor = await prisma.doctor.upsert({
-      where: { email: doc.email },
-      update: {
+    const doctor = await prisma.doctor.create({
+      data: {
         name: doc.name,
         username: doc.username,
         specialist: doc.specialist,
         experience: doc.experience,
-        password: hashedPassword
-      },
-      create: {
-        ...doc,
-        password: hashedPassword
-      },
+        email: doc.email,
+        password: hashedPassword,
+        hospitalId: doc.hospitalId,
+        role: 'DOCTOR'
+      }
     });
-    console.log(`Created/Updated doctor: ${doctor.name}`);
+    console.log(`Created doctor: ${doctor.name}`);
 
     // Create slots for the next 7 days
+    const slotsData = [];
     for (const date of dates) {
         for (const time of times) {
-            // Check if slot exists to avoid duplicates
-            const existingSlot = await prisma.timeSlot.findFirst({
-                where: {
-                    doctorId: doctor.doctorId,
-                    date: date,
-                    time: time
-                }
+            slotsData.push({
+                date: date,
+                time: time,
+                status: 'AVAILABLE',
+                doctorId: doctor.id
             });
-
-            if (!existingSlot) {
-                await prisma.timeSlot.create({
-                    data: {
-                        date: date,
-                        time: time,
-                        status: 'AVAILABLE',
-                        doctorId: doctor.doctorId
-                    }
-                });
-            }
         }
     }
+    await prisma.timeSlot.createMany({ data: slotsData });
     console.log(`Seeded slots for ${doctor.name}`);
   }
 
-  // Seed Admins
+  // 5. Seed Admins
+  console.log('Seeding admins...');
   const admins = [
-    { username: 'admin@canqure.com', password: 'admin123', role: 'admin' },
-    { username: 'hospital@canqure.com', password: 'hospital123', role: 'hospital_admin' },
-    { username: 'apollo@canqure.com', password: 'apollo123', role: 'pharmacy', pharmacyName: 'Apollo Pharmacy' },
-    { username: 'medplus@canqure.com', password: 'medplus123', role: 'pharmacy', pharmacyName: 'MedPlus Chemist' },
-    { username: 'fortis@canqure.com', password: 'fortis123', role: 'pharmacy', pharmacyName: 'Fortis Medstore' }
+    { username: 'admin@canqure.com', password: 'admin123', role: 'SYSTEM_ADMIN' },
+    { username: 'hospital@canqure.com', password: 'hospital123', role: 'HOSPITAL_ADMIN', hospitalId: medanta.id },
+    { username: 'apollo@canqure.com', password: 'apollo123', role: 'PHARMACY_ADMIN', pharmacyId: apolloPharmacy.id },
+    { username: 'medplus@canqure.com', password: 'medplus123', role: 'PHARMACY_ADMIN', pharmacyId: medplusPharmacy.id },
+    { username: 'fortis@canqure.com', password: 'fortis123', role: 'PHARMACY_ADMIN', pharmacyId: fortisPharmacy.id }
   ];
 
   for (const adminData of admins) {
     const hashedPassword = await bcrypt.hash(adminData.password, 10);
-    await prisma.admin.upsert({
-      where: { username: adminData.username },
-      update: { 
-        role: adminData.role, 
-        pharmacyName: adminData.pharmacyName || null,
-        password: hashedPassword
-      },
-      create: {
-        ...adminData,
-        password: hashedPassword
-      },
+    await prisma.admin.create({
+      data: {
+        username: adminData.username,
+        password: hashedPassword,
+        role: adminData.role,
+        hospitalId: adminData.hospitalId || null,
+        pharmacyId: adminData.pharmacyId || null
+      }
     });
   }
-  console.log('Seeded demo admins including three distinct pharmacies');
+  console.log('Seeded admins.');
 
-  // Seed Patient
-  const patientData = {
-    username: 'patient_demo',
-    email: 'patient@canqure.com',
-    password: await bcrypt.hash('patient123', 10),
-    name: 'John Patient'
-  };
-
-  const patient = await prisma.user.upsert({
-    where: { email: patientData.email },
-    update: {},
-    create: patientData,
+  // 6. Seed Demo Patient
+  console.log('Seeding patient...');
+  const patientHashPassword = await bcrypt.hash('patient123', 10);
+  const patient = await prisma.user.create({
+    data: {
+      username: 'patient_demo',
+      email: 'patient@canqure.com',
+      password: patientHashPassword,
+      name: 'John Patient',
+      role: 'PATIENT'
+    }
   });
-  console.log('Seeded demo patient');
 
   // Seed CancerType for patient
-  await prisma.cancerType.deleteMany({ where: { userId: patient.id } }).catch(e => {});
   await prisma.cancerType.create({
     data: {
       name: 'Breast Cancer',
@@ -160,33 +243,55 @@ async function main() {
       treatments: 'Hormone therapy (Tamoxifen), targeted therapy',
       userId: patient.id
     }
-  }).catch(e => console.log("CancerType seed error:", e.message));
-  console.log('Seeded cancer type for patient');
+  });
+  console.log('Seeded cancer type for patient.');
 
-  // Seed Mock Appointments for Routing Dashboard
+  // 7. Seed Mock Appointments
+  console.log('Seeding mock appointments...');
   const docForApt = await prisma.doctor.findFirst();
   if (docForApt && patient) {
     const mockAppointments = [
-      { date: '2026-06-01', time: '10:00', patientName: 'James Morrison', userId: patient.id, doctorId: docForApt.doctorId, urgencyLevel: 'URGENT', status: 'PENDING' },
-      { date: '2026-06-02', time: '11:00', patientName: 'Clara Oswald', userId: patient.id, doctorId: docForApt.doctorId, urgencyLevel: 'NORMAL', status: 'ACCEPTED' },
-      { date: '2026-06-03', time: '14:00', patientName: 'Robert Baratheon', userId: patient.id, doctorId: docForApt.doctorId, urgencyLevel: 'NORMAL', status: 'PENDING' },
+      { date: '2026-06-23', time: '10:00', patientName: 'James Morrison', userId: patient.id, doctorId: docForApt.id, urgencyLevel: 'URGENT', status: 'SCHEDULED', hospitalId: medanta.id },
+      { date: '2026-06-24', time: '11:00', patientName: 'Clara Oswald', userId: patient.id, doctorId: docForApt.id, urgencyLevel: 'NORMAL', status: 'SCHEDULED', hospitalId: medanta.id },
+      { date: '2026-06-25', time: '14:00', patientName: 'Robert Baratheon', userId: patient.id, doctorId: docForApt.id, urgencyLevel: 'NORMAL', status: 'SCHEDULED', hospitalId: medanta.id }
     ];
 
     for (const appt of mockAppointments) {
-      await prisma.appointment.create({ data: appt }).catch(e => console.log("Appointment exist or err", e.message));
+      // Find matching timeslot for the doctor
+      const slot = await prisma.timeSlot.findFirst({
+        where: {
+          doctorId: appt.doctorId,
+          date: appt.date,
+          time: appt.time
+        }
+      });
+      
+      const apptData = { ...appt };
+      if (slot) {
+        apptData.timeSlotId = slot.id;
+      }
+      
+      await prisma.appointment.create({ data: apptData });
+      
+      if (slot) {
+        await prisma.timeSlot.update({
+          where: { id: slot.id },
+          data: { status: 'BOOKED' }
+        });
+      }
     }
-    console.log('Seeded mock appointments');
+    console.log('Seeded mock appointments.');
   }
 
-  // Seed Mock Refill Orders
+  // 8. Seed Mock Refill Orders
+  console.log('Seeding mock refill orders...');
   if (patient) {
-    await prisma.refillOrder.deleteMany().catch(e => {});
     const mockRefills = [
       {
         medName: 'Imatinib 400mg',
         patientName: patient.name || 'John Patient',
         patientId: patient.id,
-        pharmacyName: 'Apollo Pharmacy',
+        pharmacyId: apolloPharmacy.id,
         price: '₹2,000',
         status: 'PENDING',
         deliveryTime: '2 hours',
@@ -196,7 +301,7 @@ async function main() {
         medName: 'Doxorubicin 50mg',
         patientName: patient.name || 'John Patient',
         patientId: patient.id,
-        pharmacyName: 'MedPlus Chemist',
+        pharmacyId: medplusPharmacy.id,
         price: '₹4,500',
         status: 'PREPARING',
         deliveryTime: '1 day',
@@ -206,7 +311,7 @@ async function main() {
         medName: 'Pembrolizumab 100mg',
         patientName: patient.name || 'John Patient',
         patientId: patient.id,
-        pharmacyName: 'Fortis Medstore',
+        pharmacyId: fortisPharmacy.id,
         price: '₹85,000',
         status: 'DELIVERED',
         deliveryTime: '4 hours',
@@ -215,12 +320,12 @@ async function main() {
     ];
 
     for (const refill of mockRefills) {
-      await prisma.refillOrder.create({ data: refill }).catch(e => console.log("Refill seed err", e.message));
+      await prisma.refillOrder.create({ data: refill });
     }
-    console.log('Seeded mock refill orders');
+    console.log('Seeded mock refill orders.');
   }
 
-  console.log('Seeding finished.');
+  console.log('Database seeding complete successfully!');
 }
 
 main()

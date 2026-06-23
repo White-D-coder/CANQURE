@@ -10,6 +10,7 @@ import RiskAssessment from './pages/RiskAssessment/RiskAssessment';
 import ReportHistory from './pages/ReportHistory/ReportHistory';
 import HospitalDashboard from './pages/HospitalDashboard/HospitalDashboard';
 import PharmacyDashboard from './pages/PharmacyDashboard/PharmacyDashboard';
+import DriverDashboard from './pages/DriverDashboard/DriverDashboard';
 import ProtectedRoute from './components/ProtectedRoute';
 
 function App() {
@@ -18,6 +19,7 @@ function App() {
             <Routes>
                 <Route path="/login" element={<Login />} />
                 <Route path="/signup" element={<Signup />} />
+                <Route path="/driver" element={<DriverDashboard />} />
 
                 <Route
                     path="/admin"
