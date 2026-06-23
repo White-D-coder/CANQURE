@@ -4,10 +4,32 @@ import { useAuth } from '../../contexts/AuthContext';
 import { 
     Building, LogOut, Bed, Activity, Users, Settings, 
     Plus, X, Save, CheckCircle, ShieldAlert, Navigation, 
-    Truck, FileText, AlertCircle, MapPin, ChevronRight
+    Truck, FileText, AlertCircle, MapPin, Clock
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 import api from '../../api/axios';
+
+// Helper to dynamically load Leaflet from CDN
+const loadLeaflet = () => {
+    return new Promise((resolve) => {
+        if (window.L) {
+            resolve(window.L);
+            return;
+        }
+
+        // Inject Leaflet CSS
+        const link = document.createElement('link');
+        link.rel = 'stylesheet';
+        link.href = 'https://unpkg.com/leaflet@1.9.4/dist/leaflet.css';
+        document.head.appendChild(link);
+
+        // Inject Leaflet JS
+        const script = document.createElement('script');
+        script.src = 'https://unpkg.com/leaflet@1.9.4/dist/leaflet.js';
+        script.onload = () => resolve(window.L);
+        document.head.appendChild(script);
+    });
+};
 
 function HospitalDashboard() {
     const { user, logout } = useAuth();
@@ -28,11 +50,25 @@ function HospitalDashboard() {
     
     // Live SOS emergency states
     const [activeSos, setActiveSos] = useState(null);
-    const [ambulancePos, setAmbulancePos] = useState({ x: 50, y: 50 });
+    const [ambulancePos, setAmbulancePos] = useState({ lat: 28.6272, lng: 77.3726 });
     const [eta, setEta] = useState(10);
     const [progress, setProgress] = useState(0);
 
+    // Leaflet map refs for mini-tracker
+    const miniMapRef = useRef(null);
+    const miniMapInstance = useRef(null);
+    const markersGroup = useRef(null);
+    const routeLine = useRef(null);
+    const ambulanceMarker = useRef(null);
+    const LRef = useRef(null);
     const trackingInterval = useRef(null);
+
+    const hospitalLocations = {
+        'h1': { lat: 28.6288, lng: 77.3662, name: 'Medanta Cancer Care Center' },
+        'h2': { lat: 28.6241, lng: 77.3792, name: 'Fortis Hospital Oncology Wing' },
+        'h3': { lat: 28.6365, lng: 77.3451, name: 'Max Super Speciality Hospital' },
+        'h4': { lat: 28.5672, lng: 77.2100, name: 'AIIMS Cancer Institute' },
+    };
 
     useEffect(() => {
         if (activeTab === 'routing') {
@@ -40,17 +76,14 @@ function HospitalDashboard() {
         }
     }, [activeTab]);
 
-    // Check for local storage SOS alerts & start synchronization
     useEffect(() => {
         checkActiveSos();
 
-        // Listen for storage changes (for cross-tab synchronization)
         const handleStorageChange = () => {
             checkActiveSos();
         };
         window.addEventListener('storage', handleStorageChange);
         
-        // Also poll backend for emergency database appointments every 5 seconds
         const pollInterval = setInterval(() => {
             if (activeTab === 'routing') {
                 fetchReferrals();
@@ -61,31 +94,23 @@ function HospitalDashboard() {
             window.removeEventListener('storage', handleStorageChange);
             clearInterval(pollInterval);
             if (trackingInterval.current) clearInterval(trackingInterval.current);
+            if (miniMapInstance.current) {
+                miniMapInstance.current.remove();
+                miniMapInstance.current = null;
+            }
         };
     }, [activeTab]);
 
-    // Animate ambulance tracking progress on the mini-map
+    // Animate ambulance tracking progress along real geolocations
     useEffect(() => {
         if (activeSos) {
-            // Start simulation
-            const start = activeSos.coordinates || { x: 50, y: 50 };
+            const start = activeSos.coordinates || { lat: 28.6272, lng: 77.3726 };
             const hospitalId = activeSos.hospitalId;
-            
-            // Medanta (h1) coordinates are (30, 25)
-            // Fortis (h2) coordinates are (75, 35)
-            // Max (h3) coordinates are (65, 70)
-            // AIIMS (h4) coordinates are (20, 65)
-            const hospitalCoords = {
-                'h1': { x: 30, y: 25 },
-                'h2': { x: 75, y: 35 },
-                'h3': { x: 65, y: 70 },
-                'h4': { x: 20, y: 65 }
-            };
-            const destination = hospitalCoords[hospitalId] || { x: 30, y: 25 };
+            const destination = hospitalLocations[hospitalId] || hospitalLocations['h1'];
 
             setAmbulancePos(start);
             setProgress(0);
-            setEta(Math.floor(Math.random() * 5 + 6)); // 6-10 minutes initial ETA
+            setEta(Math.floor(Math.random() * 5 + 6));
 
             if (trackingInterval.current) clearInterval(trackingInterval.current);
 
@@ -95,32 +120,102 @@ function HospitalDashboard() {
                     if (nextProgress >= 100) {
                         clearInterval(trackingInterval.current);
                         setEta(0);
+                        setAmbulancePos(destination);
                         return 100;
                     }
                     
-                    // Simple path interpolation with a turn
-                    // Start -> Mid (Start.x, Destination.y) -> Destination
                     const ratio = nextProgress / 100;
-                    let currentX, currentY;
-                    if (ratio < 0.5) {
-                        const localRatio = ratio * 2;
-                        currentX = start.x;
-                        currentY = start.y + (destination.y - start.y) * localRatio;
-                    } else {
-                        const localRatio = (ratio - 0.5) * 2;
-                        currentX = start.x + (destination.x - start.x) * localRatio;
-                        currentY = destination.y;
-                    }
+                    // Interpolate latitude and longitude
+                    const currentLat = start.lat + (destination.lat - start.lat) * ratio;
+                    const currentLng = start.lng + (destination.lng - start.lng) * ratio;
 
-                    setAmbulancePos({ x: currentX, y: currentY });
+                    const newPos = { lat: currentLat, lng: currentLng };
+                    setAmbulancePos(newPos);
                     setEta(Math.max(1, Math.floor((1 - ratio) * 8)));
                     return nextProgress;
                 });
             }, 3000);
         } else {
             if (trackingInterval.current) clearInterval(trackingInterval.current);
+            if (miniMapInstance.current) {
+                miniMapInstance.current.remove();
+                miniMapInstance.current = null;
+            }
         }
     }, [activeSos]);
+
+    // Initialize/Update Live Map Tracker inside Hospital Portal
+    useEffect(() => {
+        if (!activeSos || activeTab !== 'routing') return;
+
+        loadLeaflet().then((L) => {
+            LRef.current = L;
+            if (!miniMapRef.current) return;
+
+            const start = activeSos.coordinates || { lat: 28.6272, lng: 77.3726 };
+            const hospitalId = activeSos.hospitalId;
+            const destination = hospitalLocations[hospitalId] || hospitalLocations['h1'];
+
+            if (!miniMapInstance.current) {
+                miniMapInstance.current = L.map(miniMapRef.current, {
+                    zoomControl: false,
+                    attributionControl: false
+                }).setView([start.lat, start.lng], 13);
+
+                L.tileLayer('https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png', {
+                    maxZoom: 19
+                }).addTo(miniMapInstance.current);
+
+                markersGroup.current = L.layerGroup().addTo(miniMapInstance.current);
+
+                // Draw red polyline routing
+                const pathCoordinates = [
+                    [start.lat, start.lng],
+                    [start.lat, destination.lng],
+                    [destination.lat, destination.lng]
+                ];
+
+                routeLine.current = L.polyline(pathCoordinates, {
+                    color: '#ef4444', // Red routing path
+                    weight: 3,
+                    opacity: 0.8,
+                    dashArray: '5, 5',
+                    className: 'route-path-animation'
+                }).addTo(miniMapInstance.current);
+
+                // Patient Start Marker (Pulsing Blue)
+                const patientHtml = `<div class="w-3.5 h-3.5 rounded-full bg-indigo-500 border border-white"></div>`;
+                const patientIcon = L.divIcon({ html: patientHtml, iconSize: [14, 14], iconAnchor: [7, 7] });
+                L.marker([start.lat, start.lng], { icon: patientIcon }).addTo(markersGroup.current);
+
+                // Hospital Destination Marker (Green/Red pin)
+                const destHtml = `<div class="w-5 h-5 rounded-full bg-emerald-600 border border-white flex items-center justify-center text-[7px] font-black text-white">H</div>`;
+                const destIcon = L.divIcon({ html: destHtml, iconSize: [20, 20], iconAnchor: [10, 10] });
+                L.marker([destination.lat, destination.lng], { icon: destIcon }).addTo(markersGroup.current);
+
+                // Ambulance Marker (Moving red truck icon)
+                const ambulanceHtml = `
+                    <div class="relative flex items-center justify-center">
+                        <span class="animate-ping absolute inline-flex h-5 w-5 rounded-full bg-red-400 opacity-60"></span>
+                        <div class="w-5 h-5 rounded-full bg-red-600 text-white flex items-center justify-center border border-white shadow-lg">
+                            <svg xmlns="http://www.w3.org/2000/svg" width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" class="lucide lucide-truck"><path d="M14 18V6a2 2 0 0 0-2-2H4a2 2 0 0 0-2 2v11a1 1 0 0 0 1 1h2"/><path d="M19 18h2a1 1 0 0 0 1-1v-5.5a1.5 1.5 0 0 0-.5-1.1L18 7h-4"/><circle cx="7" cy="18" r="2"/><circle cx="17" cy="18" r="2"/></svg>
+                        </div>
+                    </div>
+                `;
+                const ambulanceIcon = L.divIcon({ html: ambulanceHtml, iconSize: [20, 20], iconAnchor: [10, 10] });
+                ambulanceMarker.current = L.marker([start.lat, start.lng], { icon: ambulanceIcon }).addTo(miniMapInstance.current);
+
+                miniMapInstance.current.fitBounds(L.latLngBounds(pathCoordinates), { padding: [20, 20] });
+            }
+        });
+    }, [activeSos, activeTab]);
+
+    // Update ambulance marker coordinates on position change
+    useEffect(() => {
+        if (ambulanceMarker.current && miniMapInstance.current && LRef.current) {
+            ambulanceMarker.current.setLatLng([ambulancePos.lat, ambulancePos.lng]);
+        }
+    }, [ambulancePos]);
 
     const checkActiveSos = () => {
         try {
@@ -144,17 +239,15 @@ function HospitalDashboard() {
             });
             setReferrals(res.data);
 
-            // If we don't have a local active SOS alert but the database contains an active SOS_BROADCAST appointment,
-            // we simulate/populate the activeSos state from it so the hospital admin sees it
             const activeDbSos = res.data.find(apt => apt.status === 'SOS_BROADCAST');
             if (activeDbSos && !activeSos) {
                 setActiveSos({
                     patientId: activeDbSos.dbId,
                     patientName: activeDbSos.name,
-                    hospitalId: 'h1', // Default to Medanta coordinates for simulation
+                    hospitalId: 'h1',
                     hospitalName: hospitalInfo.name,
                     address: 'GPS Pinpoint Coordinates',
-                    coordinates: { x: 50, y: 50 },
+                    coordinates: { lat: 28.6272, lng: 77.3726 },
                     urgency: 'EMERGENCY',
                     condition: activeDbSos.condition || 'Oncology SOS Intake'
                 });
@@ -172,15 +265,12 @@ function HospitalDashboard() {
             });
             setReferrals(referrals.map(r => r.dbId === dbId ? { ...r, status: newStatus } : r));
             
-            // If accepting or rerouting the active SOS alert, clear it from local storage
             if (activeSos && (activeSos.patientId === dbId || activeSos.patientName === referrals.find(r => r.dbId === dbId)?.name)) {
                 localStorage.removeItem('active_sos_alert');
                 setActiveSos(null);
-                // Trigger storage update across tabs
                 window.dispatchEvent(new Event('storage'));
             }
 
-            // Adjust available beds if accepted
             if (newStatus === 'ACCEPTED') {
                 setHospitalInfo(prev => ({
                     ...prev,
@@ -598,50 +688,16 @@ function HospitalDashboard() {
                                                         </span>
                                                     </div>
                                                     
-                                                    {/* Mini Map Canvas */}
-                                                    <div className="bg-slate-900 h-[156px] rounded-xl relative border border-slate-800 overflow-hidden">
-                                                        <div className="absolute inset-0 bg-[linear-gradient(to_right,#1e293b_1px,transparent_1px),linear-gradient(to_bottom,#1e293b_1px,transparent_1px)] bg-[size:20px_20px] opacity-10"></div>
+                                                    {/* Mini Map Container */}
+                                                    <div className="h-[156px] rounded-xl relative border border-slate-800 overflow-hidden bg-slate-950">
+                                                        <div ref={miniMapRef} className="absolute inset-0 h-full w-full bg-slate-950" />
                                                         
-                                                        <svg width="100%" height="100%" className="absolute inset-0 z-0">
-                                                            {/* Route Line */}
-                                                            {activeSos.coordinates && (
-                                                                <path 
-                                                                    d={`M 50 50 L 50 35 L 30 25`} 
-                                                                    fill="none" 
-                                                                    stroke="#ef4444" 
-                                                                    strokeWidth="2" 
-                                                                    strokeDasharray="4, 4"
-                                                                    className="route-animation"
-                                                                />
-                                                            )}
-                                                        </svg>
-
-                                                        {/* Patient/Start Dot */}
-                                                        <div className="absolute" style={{ top: '50%', left: '50%', transform: 'translate(-50%, -50%)' }}>
-                                                            <div className="w-3 h-3 rounded-full bg-indigo-500 border border-white"></div>
-                                                        </div>
-
-                                                        {/* Hospital/End Dot */}
-                                                        <div className="absolute" style={{ top: '25%', left: '30%', transform: 'translate(-50%, -50%)' }}>
-                                                            <div className="w-4 h-4 rounded-full bg-emerald-600 border border-white flex items-center justify-center text-[8px] font-black text-white">H</div>
-                                                        </div>
-
-                                                        {/* Moving Ambulance Marker */}
-                                                        <div 
-                                                            className="absolute transition-all duration-1000"
-                                                            style={{ 
-                                                                top: `${ambulancePos.y}%`, 
-                                                                left: `${ambulancePos.x}%`, 
-                                                                transform: 'translate(-50%, -50%)' 
-                                                            }}
-                                                        >
-                                                            <div className="relative flex items-center justify-center">
-                                                                <span className="animate-ping absolute inline-flex h-6 w-6 rounded-full bg-red-400 opacity-60"></span>
-                                                                <div className="w-5 h-5 rounded-full bg-red-600 text-white flex items-center justify-center shadow-lg border border-white">
-                                                                    <Truck size={10} />
-                                                                </div>
-                                                            </div>
-                                                        </div>
+                                                        <style>{`
+                                                            .route-path-animation {
+                                                                stroke-dasharray: 6, 6;
+                                                                animation: dashRoute 8s linear infinite;
+                                                            }
+                                                        `}</style>
                                                     </div>
                                                 </div>
 

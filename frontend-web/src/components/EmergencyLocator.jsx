@@ -1,50 +1,204 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { 
     AlertTriangle, MapPin, Navigation, Phone, CheckCircle, 
-    Clock, Bed, Loader2, ShieldAlert, Search, Crosshair, Compass, Eye
+    Clock, Bed, Loader2, ShieldAlert, Search, Crosshair, Compass
 } from 'lucide-react';
 import api from '../api/axios';
+
+// Helper to dynamically load Leaflet from CDN to bypass Vite/Rollup build issues
+const loadLeaflet = () => {
+    return new Promise((resolve) => {
+        if (window.L) {
+            resolve(window.L);
+            return;
+        }
+
+        // Inject Leaflet CSS
+        const link = document.createElement('link');
+        link.rel = 'stylesheet';
+        link.href = 'https://unpkg.com/leaflet@1.9.4/dist/leaflet.css';
+        document.head.appendChild(link);
+
+        // Inject Leaflet JS
+        const script = document.createElement('script');
+        script.src = 'https://unpkg.com/leaflet@1.9.4/dist/leaflet.js';
+        script.onload = () => resolve(window.L);
+        document.head.appendChild(script);
+    });
+};
 
 const EmergencyLocator = ({ user }) => {
     const [hospitals, setHospitals] = useState([]);
     const [loading, setLoading] = useState(true);
     const [requestingId, setRequestingId] = useState(null);
     const [successMsg, setSuccessMsg] = useState('');
-    const [isCritical, setIsCritical] = useState(true);
     const [dispatched, setDispatched] = useState(null);
     
     // GPS and Mapping states
     const [searchAddress, setSearchAddress] = useState('');
     const [isGeocoding, setIsGeocoding] = useState(false);
     const [currentAddress, setCurrentAddress] = useState('Sector 62, Noida, UP');
-    const [patientCoords, setPatientCoords] = useState({ x: 50, y: 50 }); // Center of the map
+    const [patientCoords, setPatientCoords] = useState({ lat: 28.6272, lng: 77.3726 }); // Sector 62 Noida GPS Center
     const [selectedHospital, setSelectedHospital] = useState(null);
-    const [activeRoutePath, setActiveRoutePath] = useState(null);
 
-    // Default predefined positions for hospitals on our 100x100 grid map
-    const hospitalPositions = {
-        'h1': { x: 30, y: 25 }, // Medanta Cancer Care
-        'h2': { x: 75, y: 35 }, // Fortis Hospital
-        'h3': { x: 65, y: 70 }, // Max Super Speciality
-        'h4': { x: 20, y: 65 }, // AIIMS Cancer Institute
+    // Leaflet refs
+    const mapRef = useRef(null);
+    const mapInstance = useRef(null);
+    const markersGroup = useRef(null);
+    const routeLine = useRef(null);
+    const LRef = useRef(null);
+
+    // Real geo-coordinates for nearby hospitals around Sector 62, Noida
+    const hospitalLocations = {
+        'h1': { lat: 28.6288, lng: 77.3662, name: 'Medanta Cancer Care Center' }, // Sector 62
+        'h2': { lat: 28.6241, lng: 77.3792, name: 'Fortis Hospital Oncology Wing' }, // Sector 62
+        'h3': { lat: 28.6365, lng: 77.3451, name: 'Max Super Speciality Hospital' }, // Vaishali
+        'h4': { lat: 28.5672, lng: 77.2100, name: 'AIIMS Cancer Institute' }, // Delhi
     };
 
     useEffect(() => {
-        fetchHospitals();
+        fetchHospitals(patientCoords);
     }, []);
 
-    const fetchHospitals = async (coords = { x: 50, y: 50 }) => {
+    // Initialize/Update Leaflet Map
+    useEffect(() => {
+        if (loading) return;
+
+        loadLeaflet().then((L) => {
+            LRef.current = L;
+            if (!mapRef.current) return;
+
+            // Initialize map if not exists
+            if (!mapInstance.current) {
+                mapInstance.current = L.map(mapRef.current, {
+                    zoomControl: false,
+                    attributionControl: false
+                }).setView([patientCoords.lat, patientCoords.lng], 13);
+
+                // Load CartoDB Dark Matter tiles (matching the dark street map requested)
+                L.tileLayer('https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png', {
+                    maxZoom: 19
+                }).addTo(mapInstance.current);
+
+                markersGroup.current = L.layerGroup().addTo(mapInstance.current);
+            }
+
+            renderMapLayers();
+        });
+
+        return () => {
+            // Clean up route line
+            if (routeLine.current && mapInstance.current) {
+                routeLine.current.remove();
+            }
+        };
+    }, [loading, patientCoords, selectedHospital, dispatched, hospitals]);
+
+    // Redraw markers and routes on map
+    const renderMapLayers = () => {
+        const L = LRef.current;
+        const map = mapInstance.current;
+        const group = markersGroup.current;
+        if (!L || !map || !group) return;
+
+        group.clearLayers();
+        if (routeLine.current) routeLine.current.remove();
+
+        // 1. Patient Location Marker (Pulsing Blue Node)
+        const patientHtml = `
+            <div class="relative flex items-center justify-center">
+                <span class="animate-ping absolute inline-flex h-10 w-10 rounded-full bg-indigo-500 opacity-40"></span>
+                <span class="animate-pulse absolute inline-flex h-6 w-6 rounded-full bg-indigo-600 opacity-60"></span>
+                <div class="w-5 h-5 rounded-full bg-indigo-500 border-2 border-white flex items-center justify-center text-white shadow-lg relative z-10">
+                    <div class="w-1.5 h-1.5 rounded-full bg-white"></div>
+                </div>
+            </div>
+        `;
+        const patientIcon = L.divIcon({
+            html: patientHtml,
+            className: 'custom-gps-pin',
+            iconSize: [40, 40],
+            iconAnchor: [20, 20]
+        });
+        L.marker([patientCoords.lat, patientCoords.lng], { icon: patientIcon }).addTo(group);
+
+        // 2. Hospital Markers (Red Pins)
+        hospitals.forEach((h, i) => {
+            const isSelected = selectedHospital?.id === h.id;
+            const isDisp = dispatched?.id === h.id;
+            
+            const markerColor = isDisp ? '#10b981' : '#ef4444'; // Red markers as requested (green if dispatched)
+            const glowClass = isSelected ? 'animate-pulse shadow-red-500/50' : '';
+
+            const hospitalHtml = `
+                <div class="flex flex-col items-center cursor-pointer">
+                    <div class="w-7 h-7 rounded-full flex items-center justify-center text-white text-[10px] font-black border-2 border-slate-900 shadow-lg ${glowClass}" 
+                         style="background-color: ${markerColor};">
+                        ${i + 1}
+                    </div>
+                    <div class="w-0.5 h-2" style="background-color: ${markerColor};"></div>
+                </div>
+            `;
+            const hospitalIcon = L.divIcon({
+                html: hospitalHtml,
+                className: 'custom-hospital-pin',
+                iconSize: [30, 40],
+                iconAnchor: [15, 40]
+            });
+            const marker = L.marker([h.coords.lat, h.coords.lng], { icon: hospitalIcon }).addTo(group);
+            
+            marker.on('click', () => {
+                handleSelectHospital(h);
+            });
+        });
+
+        // 3. Draw Red Animated Route Line
+        if (selectedHospital) {
+            const pathCoordinates = [
+                [patientCoords.lat, patientCoords.lng],
+                // Add a middle bend coordinate to make the routing follow roads visually
+                [patientCoords.lat, selectedHospital.coords.lng],
+                [selectedHospital.coords.lat, selectedHospital.coords.lng]
+            ];
+
+            const routeColor = dispatched?.id === selectedHospital.id ? '#10b981' : '#ef4444'; // Red routing line as requested
+
+            routeLine.current = L.polyline(pathCoordinates, {
+                color: routeColor,
+                weight: 4,
+                opacity: 0.8,
+                dashArray: '8, 6',
+                className: 'route-path-animation'
+            }).addTo(map);
+
+            // Animate map view to fit bounds
+            map.fitBounds(L.latLngBounds(pathCoordinates), {
+                padding: [50, 50],
+                maxZoom: 15
+            });
+        } else {
+            // Zoom to show all elements
+            const allCoords = [
+                [patientCoords.lat, patientCoords.lng],
+                ...hospitals.map(h => [h.coords.lat, h.coords.lng])
+            ];
+            map.fitBounds(L.latLngBounds(allCoords), { padding: [40, 40] });
+        }
+    };
+
+    const fetchHospitals = async (coords = { lat: 28.6272, lng: 77.3726 }) => {
         try {
             const token = localStorage.getItem('token');
             const res = await api.get('/user/hospitals', {
                 headers: { Authorization: `Bearer ${token}` }
             });
 
-            // Map and calculate distance based on Euclidean distance on our grid
+            // Map and calculate distance based on real coordinates (in km)
             const processed = res.data.map((h, i) => {
-                const hPos = hospitalPositions[h.id] || { x: 40 + (i * 10), y: 30 + (i * 15) };
-                const distanceVal = Math.sqrt(Math.pow(hPos.x - coords.x, 2) + Math.pow(hPos.y - coords.y, 2)) * 0.15;
+                const hLoc = hospitalLocations[h.id] || { lat: coords.lat + 0.015, lng: coords.lng + 0.015 };
+                // Calculate distance in km
+                const distanceVal = calculateHaversineDistance(coords.lat, coords.lng, hLoc.lat, hLoc.lng);
                 
                 return {
                     ...h,
@@ -52,28 +206,28 @@ const EmergencyLocator = ({ user }) => {
                     bedsAvailable: h.bedsAvailable || Math.floor(Math.random() * 40 + 5),
                     phone: h.phone || `+91 99${Math.floor(Math.random() * 9000000 + 1000000)}`,
                     specialty: h.specialty || ['Oncology ER', 'Cancer Care', 'Multi-Specialty Oncology'][i % 3],
-                    wait: `${Math.floor(distanceVal * 1.5 + 4)} min`,
-                    coords: hPos
+                    wait: `${Math.floor(distanceVal * 2 + 4)} min`,
+                    coords: hLoc
                 };
             }).sort((a, b) => parseFloat(a.distance) - parseFloat(b.distance));
 
             setHospitals(processed);
         } catch (error) {
             console.error('Error fetching hospitals:', error);
-            // Fallback mock hospitals so UI always renders
+            // Fallback mock hospitals near Sector 62
             const mockData = [
-                { id: 'h1', name: 'Medanta Cancer Care Center', bedsAvailable: 12, phone: '+91 99991 11111', specialty: 'Oncology ER', coords: hospitalPositions['h1'] },
-                { id: 'h2', name: 'Fortis Hospital Oncology Wing', bedsAvailable: 6, phone: '+91 88882 22222', specialty: 'Cancer Care', coords: hospitalPositions['h2'] },
-                { id: 'h3', name: 'Max Super Speciality Hospital', bedsAvailable: 20, phone: '+91 77773 33333', specialty: 'Multi-Specialty', coords: hospitalPositions['h3'] },
-                { id: 'h4', name: 'AIIMS Cancer Institute', bedsAvailable: 30, phone: '+91 66664 44444', specialty: 'Oncology ER', coords: hospitalPositions['h4'] },
+                { id: 'h1', name: 'Medanta Cancer Care Center', bedsAvailable: 12, phone: '+91 99991 11111', specialty: 'Oncology ER', coords: hospitalLocations['h1'] },
+                { id: 'h2', name: 'Fortis Hospital Oncology Wing', bedsAvailable: 6, phone: '+91 88882 22222', specialty: 'Cancer Care', coords: hospitalLocations['h2'] },
+                { id: 'h3', name: 'Max Super Speciality Hospital', bedsAvailable: 20, phone: '+91 77773 33333', specialty: 'Multi-Specialty', coords: hospitalLocations['h3'] },
+                { id: 'h4', name: 'AIIMS Cancer Institute', bedsAvailable: 30, phone: '+91 66664 44444', specialty: 'Oncology ER', coords: hospitalLocations['h4'] },
             ];
 
             const processed = mockData.map((h) => {
-                const distanceVal = Math.sqrt(Math.pow(h.coords.x - coords.x, 2) + Math.pow(h.coords.y - coords.y, 2)) * 0.15;
+                const distanceVal = calculateHaversineDistance(coords.lat, coords.lng, h.coords.lat, h.coords.lng);
                 return {
                     ...h,
                     distance: distanceVal.toFixed(1),
-                    wait: `${Math.floor(distanceVal * 1.5 + 4)} min`,
+                    wait: `${Math.floor(distanceVal * 2 + 4)} min`,
                 };
             }).sort((a, b) => parseFloat(a.distance) - parseFloat(b.distance));
 
@@ -83,85 +237,77 @@ const EmergencyLocator = ({ user }) => {
         }
     };
 
-    // Simulate geocoding when user enters an address
+    // Calculate real geographic distance
+    const calculateHaversineDistance = (lat1, lon1, lat2, lon2) => {
+        const R = 6371; // Earth radius in km
+        const dLat = (lat2 - lat1) * Math.PI / 180;
+        const dLon = (lon2 - lon1) * Math.PI / 180;
+        const a = 
+            Math.sin(dLat / 2) * Math.sin(dLat / 2) +
+            Math.cos(lat1 * Math.PI / 180) * Math.cos(lat2 * Math.PI / 180) * 
+            Math.sin(dLon / 2) * Math.sin(dLon / 2);
+        const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+        return R * c;
+    };
+
+    // Simulate address search & geocoding
     const handleAddressSearch = (e) => {
         e.preventDefault();
         if (!searchAddress.trim()) return;
 
         setIsGeocoding(true);
-        // Simulate network delay
         setTimeout(() => {
-            // Generate deterministic coordinates based on address length/characters
+            // Shift coordinates slightly based on input text to simulate geocoding
             const charSum = searchAddress.split('').reduce((acc, char) => acc + char.charCodeAt(0), 0);
-            const newX = 25 + (charSum % 50); // Keep between 25 and 75
-            const newY = 25 + ((charSum * 3) % 50);
+            const deltaLat = ((charSum % 30) - 15) * 0.0015;
+            const deltaLng = (((charSum * 3) % 30) - 15) * 0.0015;
 
-            const newCoords = { x: newX, y: newY };
+            const newCoords = {
+                lat: 28.6272 + deltaLat,
+                lng: 77.3726 + deltaLng
+            };
+
             setPatientCoords(newCoords);
             setCurrentAddress(searchAddress);
             setIsGeocoding(false);
-            
-            // Recalculate routes and distances
             fetchHospitals(newCoords);
-
-            // Update route line if a hospital was selected
-            if (selectedHospital) {
-                const updatedHosp = hospitals.find(h => h.id === selectedHospital.id);
-                if (updatedHosp) {
-                    calculateRoute(newCoords, updatedHosp.coords);
-                } else {
-                    setSelectedHospital(null);
-                    setActiveRoutePath(null);
-                }
-            }
+            setSelectedHospital(null);
         }, 800);
     };
 
-    // Locate Me: resets patient location to GPS center
+    // Reset GPS Location
     const resetToGPS = () => {
         setIsGeocoding(true);
         setTimeout(() => {
-            const gpsCoords = { x: 50, y: 50 };
+            const gpsCoords = { lat: 28.6272, lng: 77.3726 };
             setPatientCoords(gpsCoords);
             setCurrentAddress('Sector 62, Noida, UP (GPS Loc)');
             setSearchAddress('');
             setIsGeocoding(false);
             fetchHospitals(gpsCoords);
-            if (selectedHospital) {
-                calculateRoute(gpsCoords, selectedHospital.coords);
-            }
+            setSelectedHospital(null);
         }, 600);
-    };
-
-    // Generate smart routing path between patient and hospital
-    const calculateRoute = (start, end) => {
-        // Create an interesting SVG path with a turn/bend to make it look like actual street navigation
-        const midX = start.x;
-        const midY = end.y;
-        setActiveRoutePath(`M ${start.x} ${start.y} L ${midX} ${midY} L ${end.x} ${end.y}`);
     };
 
     const handleSelectHospital = (hospital) => {
         setSelectedHospital(hospital);
-        calculateRoute(patientCoords, hospital.coords);
     };
 
     const requestEmergency = async (hospital) => {
         setRequestingId(hospital.id);
         try {
             const token = localStorage.getItem('token');
-            // Call actual SOS route
             await api.post('/user/sos-broadcast', {}, {
                 headers: { Authorization: `Bearer ${token}` }
             });
         } catch (error) {
-            console.error('Emergency request failed, proceeding with local broadcast simulation', error);
+            console.error('Emergency request failed, proceeding with simulation', error);
         } finally {
             setRequestingId(null);
             setDispatched(hospital);
             setSuccessMsg(`Emergency dispatched to ${hospital.name}. Trauma bay notified.`);
             
-            // Write to LocalStorage for real-time synchronization with Hospital Dashboard
+            // Save dispatch coordinates to local storage for cross-tab hospital dashboard sync
             const sosData = {
                 patientId: user?.id || 'demo-patient-id',
                 patientName: user?.name || 'John Patient',
@@ -169,14 +315,16 @@ const EmergencyLocator = ({ user }) => {
                 hospitalName: hospital.name,
                 address: currentAddress,
                 coordinates: patientCoords,
-                routePath: `M ${patientCoords.x} ${patientCoords.y} L ${patientCoords.x} ${hospital.coords.y} L ${hospital.coords.x} ${hospital.coords.y}`,
+                routeCoordinates: [
+                    [patientCoords.lat, patientCoords.lng],
+                    [patientCoords.lat, hospital.coords.lng],
+                    [hospital.coords.lat, hospital.coords.lng]
+                ],
                 timestamp: new Date().toISOString(),
                 urgency: 'EMERGENCY',
                 condition: 'Oncology SOS Intake'
             };
             localStorage.setItem('active_sos_alert', JSON.stringify(sosData));
-            
-            // Trigger storage event manually to notify the same tab if needed
             window.dispatchEvent(new Event('storage'));
 
             setTimeout(() => setSuccessMsg(''), 7000);
@@ -185,14 +333,14 @@ const EmergencyLocator = ({ user }) => {
 
     const getTurnDirections = () => {
         if (!selectedHospital) return [];
-        const isNorth = patientCoords.y > selectedHospital.coords.y;
-        const isEast = patientCoords.x < selectedHospital.coords.x;
+        const isNorth = patientCoords.lat < selectedHospital.coords.lat;
+        const isEast = patientCoords.lng < selectedHospital.coords.lng;
         
         return [
-            { text: `Exit from ${currentAddress.split(',')[0]} towards main highway.`, dist: '400 m' },
-            { text: `Turn ${isEast ? 'Right' : 'Left'} and merge onto Health Ring Road.`, dist: '1.2 km' },
-            { text: `Continue straight. Pass green belt park on the ${isNorth ? 'Right' : 'Left'}.`, dist: '2.5 km' },
-            { text: `Turn towards ${selectedHospital.name} Emergency Intake Gate.`, dist: '300 m' }
+            { text: `Exit from ${currentAddress.split(',')[0]} and drive towards main highway intersection.`, dist: '400 m' },
+            { text: `Turn ${isEast ? 'Right' : 'Left'} and merge onto Noida Ring Expressway.`, dist: '1.2 km' },
+            { text: `Drive straight, passing green belts. Follow signs for ${isNorth ? 'Delhi' : 'Greater Noida'}.`, dist: '2.5 km' },
+            { text: `Take the slip road towards ${selectedHospital.name} Ambulance Bay entrance.`, dist: '300 m' }
         ];
     };
 
@@ -303,133 +451,49 @@ const EmergencyLocator = ({ user }) => {
             {/* Map and Hospital List Layout */}
             <div className="grid grid-cols-1 lg:grid-cols-5 gap-6">
 
-                {/* Interactive Map */}
+                {/* Real Dark Map (CartoDB Dark Matter Theme) */}
                 <div className="lg:col-span-3 bg-slate-950 border border-slate-800 rounded-3xl overflow-hidden h-[440px] relative shadow-lg">
-                    {/* Dark Grid Background */}
-                    <div className="absolute inset-0 bg-[linear-gradient(to_right,#1e293b_1px,transparent_1px),linear-gradient(to_bottom,#1e293b_1px,transparent_1px)] bg-[size:40px_40px] opacity-25" />
-
-                    <svg width="100%" height="100%" className="absolute inset-0 z-0">
-                        {/* Stylized park circles */}
-                        <circle cx="15%" cy="30%" r="60" fill="#065f46" className="opacity-20" />
-                        <circle cx="85%" cy="75%" r="80" fill="#065f46" className="opacity-15" />
-                        
-                        {/* Stylized river */}
-                        <path d="M -20 400 Q 150 350 300 380 T 600 320 T 1000 350" fill="none" stroke="#1d4ed8" strokeWidth="24" className="opacity-10" />
-
-                        {/* Road Network Lines */}
-                        <path d="M 0 150 L 1000 150" stroke="#334155" strokeWidth="4" className="opacity-40" />
-                        <path d="M 0 350 L 1000 350" stroke="#334155" strokeWidth="4" className="opacity-40" />
-                        <path d="M 250 0 L 250 500" stroke="#334155" strokeWidth="4" className="opacity-40" />
-                        <path d="M 750 0 L 750 500" stroke="#334155" strokeWidth="4" className="opacity-40" />
-
-                        {/* Animated Active Route Path */}
-                        {activeRoutePath && (
-                            <>
-                                {/* Route glow underlay */}
-                                <path 
-                                    d={activeRoutePath} 
-                                    fill="none" 
-                                    stroke={dispatched ? '#10b981' : '#ef4444'} 
-                                    strokeWidth="6" 
-                                    className="opacity-20 blur-sm"
-                                />
-                                {/* Laser line animation */}
-                                <path 
-                                    d={activeRoutePath} 
-                                    fill="none" 
-                                    stroke={dispatched ? '#10b981' : '#ef4444'} 
-                                    strokeWidth="3" 
-                                    strokeDasharray="8, 6"
-                                    className="route-animation"
-                                    style={{
-                                        animation: 'dash 30s linear infinite'
-                                    }}
-                                />
-                            </>
-                        )}
-                    </svg>
+                    {/* Map container DOM element */}
+                    <div ref={mapRef} className="absolute inset-0 z-0 h-full w-full bg-slate-950" />
 
                     <style>{`
-                        @keyframes dash {
+                        /* CSS animation for red animated route path */
+                        .route-path-animation {
+                            stroke-dasharray: 10, 8;
+                            animation: dashRoute 12s linear infinite;
+                        }
+                        @keyframes dashRoute {
                             to {
                                 stroke-dashoffset: -1000;
                             }
                         }
-                        .route-animation {
-                            animation: dash 8s linear infinite !important;
+                        /* Dark leaflet styling tweaks to integrate nicely with dashboard */
+                        .leaflet-container {
+                            background-color: #020617 !important;
+                            font-family: inherit !important;
+                        }
+                        .leaflet-div-icon {
+                            background: transparent !important;
+                            border: none !important;
                         }
                     `}</style>
 
-                    {/* Hospital pins */}
-                    {hospitals.map((h, i) => {
-                        const isSelected = selectedHospital?.id === h.id;
-                        const isDisp = dispatched?.id === h.id;
-                        
-                        return (
-                            <div 
-                                key={h.id} 
-                                className="absolute cursor-pointer group"
-                                style={{ 
-                                    top: `${h.coords.y}%`, 
-                                    left: `${h.coords.x}%`, 
-                                    transform: 'translate(-50%, -100%)' 
-                                }}
-                                onClick={() => handleSelectHospital(h)}
-                            >
-                                <div className="flex flex-col items-center">
-                                    {/* Tooltip */}
-                                    <div className="absolute bottom-11 scale-0 group-hover:scale-100 transition-all bg-slate-900 border border-slate-700 text-white px-3 py-1.5 rounded-xl text-[10px] font-bold whitespace-nowrap shadow-xl z-20 pointer-events-none">
-                                        <p className="text-white">{h.name}</p>
-                                        <p className="text-red-400 text-[9px] mt-0.5">{h.bedsAvailable} Beds Available · {h.distance} km</p>
-                                    </div>
-                                    <div className={`w-8 h-8 rounded-full flex items-center justify-center text-white text-xs font-black shadow-lg border-2 transition-all ${
-                                        isDisp 
-                                        ? 'bg-emerald-600 border-emerald-300 scale-110 shadow-emerald-600/50' 
-                                        : isSelected 
-                                        ? 'bg-red-500 border-red-300 scale-110 shadow-red-500/50 animate-pulse' 
-                                        : 'bg-red-950 border-red-700 hover:bg-red-900'
-                                    }`}>
-                                        {i + 1}
-                                    </div>
-                                    <div className={`w-0.5 h-3 mt-0.5 ${isDisp ? 'bg-emerald-500' : isSelected ? 'bg-red-400' : 'bg-red-800'}`} />
-                                </div>
-                            </div>
-                        );
-                    })}
-
-                    {/* Patient location pin */}
-                    <div 
-                        className="absolute transition-all duration-500"
-                        style={{ 
-                            top: `${patientCoords.y}%`, 
-                            left: `${patientCoords.x}%`, 
-                            transform: 'translate(-50%, -50%)' 
-                        }}
-                    >
-                        <div className="relative flex items-center justify-center">
-                            {/* Pulse rings */}
-                            <span className="animate-ping absolute inline-flex h-12 w-12 rounded-full bg-indigo-500 opacity-40"></span>
-                            <span className="animate-pulse absolute inline-flex h-8 w-8 rounded-full bg-indigo-600 opacity-60"></span>
-                            <div className="w-6 h-6 rounded-full bg-indigo-500 text-white flex items-center justify-center shadow-lg border-2 border-white relative z-10">
-                                <MapPin size={12} />
-                            </div>
-                        </div>
-                    </div>
-
                     {/* Map Labels / Legend */}
-                    <div className="absolute top-4 left-4 bg-slate-900/90 backdrop-blur-sm border border-slate-800 rounded-2xl shadow-sm p-4 space-y-1 text-[10px] font-semibold text-slate-400 z-10">
+                    <div className="absolute top-4 left-4 bg-slate-900/95 backdrop-blur-sm border border-slate-800 rounded-2xl shadow-lg p-4 space-y-1 text-[10px] font-semibold text-slate-400 z-10 pointer-events-none">
                         <div className="text-white text-[11px] font-black mb-1 flex items-center gap-1.5">
                             <Compass size={12} className="text-indigo-400" /> Navigation Legend
                         </div>
                         <div className="flex items-center gap-2"><div className="w-2.5 h-2.5 rounded-full bg-indigo-500" /> Patient Location</div>
-                        <div className="flex items-center gap-2"><div className="w-2.5 h-2.5 rounded-full bg-red-950 border border-red-700" /> Oncology ER</div>
-                        <div className="flex items-center gap-2"><div className="w-2.5 h-2.5 rounded-full bg-red-500" /> Selected Hospital</div>
+                        <div className="flex items-center gap-2"><div className="w-2.5 h-2.5 rounded-full bg-red-600" /> Oncology ER (Ready)</div>
+                        {selectedHospital && (
+                            <div className="flex items-center gap-2"><div className="w-2.5 h-2.5 rounded-full bg-red-500 animate-pulse border border-red-300" /> Selected Hospital</div>
+                        )}
                         {dispatched && (
-                            <div className="flex items-center gap-2"><div className="w-2.5 h-2.5 rounded-full bg-emerald-600" /> Ambulance Intaking</div>
+                            <div className="flex items-center gap-2"><div className="w-2.5 h-2.5 rounded-full bg-emerald-600" /> Dispatched Route</div>
                         )}
                     </div>
 
-                    <div className="absolute bottom-4 left-4 bg-slate-900/90 backdrop-blur-sm px-3 py-2 rounded-xl border border-slate-800 text-[10px] text-slate-300 font-semibold shadow-sm z-10">
+                    <div className="absolute bottom-4 left-4 bg-slate-900/95 backdrop-blur-sm px-3.5 py-2.5 rounded-xl border border-slate-800 text-[10px] text-slate-300 font-semibold shadow-lg z-10 pointer-events-none">
                         <span className="text-indigo-400 font-bold">Address:</span> {currentAddress}
                     </div>
                 </div>
