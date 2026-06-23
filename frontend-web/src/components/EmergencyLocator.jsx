@@ -158,9 +158,9 @@ const EmergencyLocator = ({ user }) => {
 
             const hospitalHtml = `
                 <div class="flex flex-col items-center cursor-pointer">
-                    <div class="w-7 h-7 rounded-full flex items-center justify-center text-white text-[10px] font-black border-2 border-slate-900 shadow-lg ${glowClass}" 
+                    <div class="w-7 h-7 rounded-full flex items-center justify-center text-white text-[12px] font-black border-2 border-slate-900 shadow-lg ${glowClass}" 
                          style="background-color: ${markerColor};">
-                        ${i + 1}
+                        +
                     </div>
                     <div class="w-0.5 h-2" style="background-color: ${markerColor};"></div>
                 </div>
@@ -317,7 +317,9 @@ const EmergencyLocator = ({ user }) => {
                 let hName = h.name;
                 let hBeds = h.bedsAvailable;
 
-                if (customLocs[h.id]) {
+                if (h.latitude && h.longitude) {
+                    hLoc = { lat: h.latitude, lng: h.longitude };
+                } else if (customLocs[h.id]) {
                     hLoc = customLocs[h.id].coords;
                     hName = customLocs[h.id].name || h.name;
                     hBeds = customLocs[h.id].bedsAvailable !== undefined ? customLocs[h.id].bedsAvailable : h.bedsAvailable;
@@ -348,10 +350,10 @@ const EmergencyLocator = ({ user }) => {
         } catch (error) {
             console.error('Error fetching hospitals:', error);
             const mockData = [
-                { id: 'h1', name: 'Medanta Cancer Care Center', bedsAvailable: 12, phone: '+91 99991 11111', specialty: 'Oncology ER' },
-                { id: 'h2', name: 'Fortis Hospital Oncology Wing', bedsAvailable: 6, phone: '+91 88882 22222', specialty: 'Cancer Care' },
-                { id: 'h3', name: 'Max Super Speciality Hospital', bedsAvailable: 20, phone: '+91 77773 33333', specialty: 'Multi-Specialty' },
-                { id: 'h4', name: 'AIIMS Cancer Institute', bedsAvailable: 30, phone: '+91 66664 44444', specialty: 'Oncology ER' },
+                { id: 'h1', name: 'Medanta Cancer Care Center', bedsAvailable: 12, phone: '+91 99991 11111', specialty: 'Oncology ER', latitude: 28.4312, longitude: 77.0423 },
+                { id: 'h2', name: 'Fortis Hospital Oncology Wing', bedsAvailable: 6, phone: '+91 88882 22222', specialty: 'Cancer Care', latitude: 28.4595, longitude: 77.0726 },
+                { id: 'h3', name: 'Max Super Speciality Hospital', bedsAvailable: 20, phone: '+91 77773 33333', specialty: 'Multi-Specialty', latitude: 28.5284, longitude: 77.2198 },
+                { id: 'h4', name: 'AIIMS Cancer Institute', bedsAvailable: 30, phone: '+91 66664 44444', specialty: 'Oncology ER', latitude: 28.5672, longitude: 77.2100 },
             ];
 
             const customLocsRaw = localStorage.getItem('custom_hospital_locations');
@@ -362,7 +364,9 @@ const EmergencyLocator = ({ user }) => {
                 let hName = h.name;
                 let hBeds = h.bedsAvailable;
 
-                if (customLocs[h.id]) {
+                if (h.latitude && h.longitude) {
+                    hLoc = { lat: h.latitude, lng: h.longitude };
+                } else if (customLocs[h.id]) {
                     hLoc = customLocs[h.id].coords;
                     hName = customLocs[h.id].name || h.name;
                     hBeds = customLocs[h.id].bedsAvailable !== undefined ? customLocs[h.id].bedsAvailable : h.bedsAvailable;
@@ -700,10 +704,10 @@ const EmergencyLocator = ({ user }) => {
                                     >
                                         <div className="flex justify-between items-start mb-1.5">
                                             <div className="flex items-center gap-2">
-                                                <span className={`w-5 h-5 rounded-full text-white text-[9px] font-black flex items-center justify-center shrink-0 ${
+                                                <span className={`w-5 h-5 rounded-full text-white text-[10px] font-black flex items-center justify-center shrink-0 ${
                                                     isDisp ? 'bg-emerald-600' : isSelected ? 'bg-red-500' : 'bg-slate-700'
                                                 }`}>
-                                                    {i + 1}
+                                                    +
                                                 </span>
                                                 <h4 className="font-bold text-slate-900 text-xs leading-tight">{h.name}</h4>
                                             </div>
