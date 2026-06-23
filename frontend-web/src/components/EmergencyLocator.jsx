@@ -6,7 +6,7 @@ import {
 } from 'lucide-react';
 import api from '../api/axios';
 
-// Helper to dynamically load Leaflet from CDN to bypass Vite/Rollup build issues
+// Helper to dynamically load Leaflet from CDN
 const loadLeaflet = () => {
     return new Promise((resolve) => {
         if (window.L) {
@@ -14,13 +14,11 @@ const loadLeaflet = () => {
             return;
         }
 
-        // Inject Leaflet CSS
         const link = document.createElement('link');
         link.rel = 'stylesheet';
         link.href = 'https://unpkg.com/leaflet@1.9.4/dist/leaflet.css';
         document.head.appendChild(link);
 
-        // Inject Leaflet JS
         const script = document.createElement('script');
         script.src = 'https://unpkg.com/leaflet@1.9.4/dist/leaflet.js';
         script.onload = () => resolve(window.L);
@@ -38,8 +36,8 @@ const EmergencyLocator = ({ user }) => {
     // GPS and Mapping states
     const [searchAddress, setSearchAddress] = useState('');
     const [isGeocoding, setIsGeocoding] = useState(false);
-    const [currentAddress, setCurrentAddress] = useState('Sector 62, Noida, UP');
-    const [patientCoords, setPatientCoords] = useState({ lat: 28.6272, lng: 77.3726 }); // Sector 62 Noida GPS Center
+    const [currentAddress, setCurrentAddress] = useState('Pinpointing Location...');
+    const [patientCoords, setPatientCoords] = useState({ lat: 28.6272, lng: 77.3726 }); // Sector 62 Noida Default
     const [selectedHospital, setSelectedHospital] = useState(null);
 
     // Leaflet refs
@@ -49,16 +47,9 @@ const EmergencyLocator = ({ user }) => {
     const routeLine = useRef(null);
     const LRef = useRef(null);
 
-    // Real geo-coordinates for nearby hospitals around Sector 62, Noida
-    const hospitalLocations = {
-        'h1': { lat: 28.6288, lng: 77.3662, name: 'Medanta Cancer Care Center' }, // Sector 62
-        'h2': { lat: 28.6241, lng: 77.3792, name: 'Fortis Hospital Oncology Wing' }, // Sector 62
-        'h3': { lat: 28.6365, lng: 77.3451, name: 'Max Super Speciality Hospital' }, // Vaishali
-        'h4': { lat: 28.5672, lng: 77.2100, name: 'AIIMS Cancer Institute' }, // Delhi
-    };
-
+    // Fetch user's real location on mount
     useEffect(() => {
-        fetchHospitals(patientCoords);
+        acquireRealLocation();
     }, []);
 
     // Initialize/Update Leaflet Map
@@ -76,7 +67,6 @@ const EmergencyLocator = ({ user }) => {
                     attributionControl: false
                 }).setView([patientCoords.lat, patientCoords.lng], 13);
 
-                // Load CartoDB Dark Matter tiles (matching the dark street map requested)
                 L.tileLayer('https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png', {
                     maxZoom: 19
                 }).addTo(mapInstance.current);
@@ -88,7 +78,6 @@ const EmergencyLocator = ({ user }) => {
         });
 
         return () => {
-            // Clean up route line
             if (routeLine.current && mapInstance.current) {
                 routeLine.current.remove();
             }
@@ -128,7 +117,7 @@ const EmergencyLocator = ({ user }) => {
             const isSelected = selectedHospital?.id === h.id;
             const isDisp = dispatched?.id === h.id;
             
-            const markerColor = isDisp ? '#10b981' : '#ef4444'; // Red markers as requested (green if dispatched)
+            const markerColor = isDisp ? '#10b981' : '#ef4444'; // Red markers, green if dispatched
             const glowClass = isSelected ? 'animate-pulse shadow-red-500/50' : '';
 
             const hospitalHtml = `
@@ -157,12 +146,11 @@ const EmergencyLocator = ({ user }) => {
         if (selectedHospital) {
             const pathCoordinates = [
                 [patientCoords.lat, patientCoords.lng],
-                // Add a middle bend coordinate to make the routing follow roads visually
                 [patientCoords.lat, selectedHospital.coords.lng],
                 [selectedHospital.coords.lat, selectedHospital.coords.lng]
             ];
 
-            const routeColor = dispatched?.id === selectedHospital.id ? '#10b981' : '#ef4444'; // Red routing line as requested
+            const routeColor = dispatched?.id === selectedHospital.id ? '#10b981' : '#ef4444';
 
             routeLine.current = L.polyline(pathCoordinates, {
                 color: routeColor,
@@ -172,13 +160,11 @@ const EmergencyLocator = ({ user }) => {
                 className: 'route-path-animation'
             }).addTo(map);
 
-            // Animate map view to fit bounds
             map.fitBounds(L.latLngBounds(pathCoordinates), {
                 padding: [50, 50],
                 maxZoom: 15
             });
         } else {
-            // Zoom to show all elements
             const allCoords = [
                 [patientCoords.lat, patientCoords.lng],
                 ...hospitals.map(h => [h.coords.lat, h.coords.lng])
@@ -187,17 +173,107 @@ const EmergencyLocator = ({ user }) => {
         }
     };
 
-    const fetchHospitals = async (coords = { lat: 28.6272, lng: 77.3726 }) => {
+    // Geolocation API to fetch coordinates
+    const acquireRealLocation = () => {
+        setIsGeocoding(true);
+        if (navigator.geolocation) {
+            navigator.geolocation.getCurrentPosition(
+                async (position) => {
+                    const coords = {
+                        lat: position.coords.latitude,
+                        lng: position.coords.longitude
+                    };
+                    setPatientCoords(coords);
+                    await reverseGeocode(coords.lat, coords.lng);
+                    fetchHospitals(coords);
+                },
+                (error) => {
+                    console.warn("Geolocation permission denied or error. Falling back to default Noida coordinates.", error);
+                    const defaultCoords = { lat: 28.6272, lng: 77.3726 };
+                    setPatientCoords(defaultCoords);
+                    setCurrentAddress('Sector 62, Noida, UP (GPS Default)');
+                    fetchHospitals(defaultCoords);
+                }
+            );
+        } else {
+            const defaultCoords = { lat: 28.6272, lng: 77.3726 };
+            setPatientCoords(defaultCoords);
+            setCurrentAddress('Sector 62, Noida, UP (GPS Default)');
+            fetchHospitals(defaultCoords);
+        }
+    };
+
+    // Reverse geocode via OpenStreetMap Nominatim
+    const reverseGeocode = async (lat, lng) => {
+        try {
+            const res = await fetch(`https://nominatim.openstreetmap.org/reverse?format=json&lat=${lat}&lon=${lng}&zoom=18&addressdetails=1`);
+            const data = await res.json();
+            if (data && data.display_name) {
+                // Shorten address for clean display
+                const parts = data.display_name.split(',');
+                const shortAddr = parts.slice(0, 3).join(',');
+                setCurrentAddress(shortAddr);
+            } else {
+                setCurrentAddress(`GPS: ${lat.toFixed(4)}, ${lng.toFixed(4)}`);
+            }
+        } catch (error) {
+            console.error("Reverse geocoding failed:", error);
+            setCurrentAddress(`GPS: ${lat.toFixed(4)}, ${lng.toFixed(4)}`);
+        } finally {
+            setIsGeocoding(false);
+        }
+    };
+
+    // Search and geocode address via OpenStreetMap Nominatim search API
+    const handleAddressSearch = async (e) => {
+        e.preventDefault();
+        if (!searchAddress.trim()) return;
+
+        setIsGeocoding(true);
+        try {
+            const res = await fetch(`https://nominatim.openstreetmap.org/search?format=json&q=${encodeURIComponent(searchAddress)}&limit=1`);
+            const data = await res.json();
+            if (data && data.length > 0) {
+                const newCoords = {
+                    lat: parseFloat(data[0].lat),
+                    lng: parseFloat(data[0].lon)
+                };
+                setPatientCoords(newCoords);
+                
+                const parts = data[0].display_name.split(',');
+                const shortAddr = parts.slice(0, 3).join(',');
+                setCurrentAddress(shortAddr);
+                
+                fetchHospitals(newCoords);
+                setSelectedHospital(null);
+            } else {
+                alert("Location not found. Please try a different query.");
+            }
+        } catch (error) {
+            console.error("Geocoding failed:", error);
+            alert("Search service currently unavailable.");
+        } finally {
+            setIsGeocoding(false);
+        }
+    };
+
+    const fetchHospitals = async (coords) => {
         try {
             const token = localStorage.getItem('token');
             const res = await api.get('/user/hospitals', {
                 headers: { Authorization: `Bearer ${token}` }
             });
 
-            // Map and calculate distance based on real coordinates (in km)
+            // Dynamically cluster hospitals around user's real location (1-5km radius)
             const processed = res.data.map((h, i) => {
-                const hLoc = hospitalLocations[h.id] || { lat: coords.lat + 0.015, lng: coords.lng + 0.015 };
-                // Calculate distance in km
+                const angle = (i * 2 * Math.PI) / res.data.length;
+                // 0.009 degrees of lat/lng is roughly 1km
+                const radius = 0.008 + (Math.random() * 0.015);
+                const hLoc = {
+                    lat: coords.lat + radius * Math.sin(angle),
+                    lng: coords.lng + radius * Math.cos(angle)
+                };
+
                 const distanceVal = calculateHaversineDistance(coords.lat, coords.lng, hLoc.lat, hLoc.lng);
                 
                 return {
@@ -214,20 +290,27 @@ const EmergencyLocator = ({ user }) => {
             setHospitals(processed);
         } catch (error) {
             console.error('Error fetching hospitals:', error);
-            // Fallback mock hospitals near Sector 62
+            // Fallback mock hospitals clustered around user's location
             const mockData = [
-                { id: 'h1', name: 'Medanta Cancer Care Center', bedsAvailable: 12, phone: '+91 99991 11111', specialty: 'Oncology ER', coords: hospitalLocations['h1'] },
-                { id: 'h2', name: 'Fortis Hospital Oncology Wing', bedsAvailable: 6, phone: '+91 88882 22222', specialty: 'Cancer Care', coords: hospitalLocations['h2'] },
-                { id: 'h3', name: 'Max Super Speciality Hospital', bedsAvailable: 20, phone: '+91 77773 33333', specialty: 'Multi-Specialty', coords: hospitalLocations['h3'] },
-                { id: 'h4', name: 'AIIMS Cancer Institute', bedsAvailable: 30, phone: '+91 66664 44444', specialty: 'Oncology ER', coords: hospitalLocations['h4'] },
+                { id: 'h1', name: 'Medanta Cancer Care Center', bedsAvailable: 12, phone: '+91 99991 11111', specialty: 'Oncology ER' },
+                { id: 'h2', name: 'Fortis Hospital Oncology Wing', bedsAvailable: 6, phone: '+91 88882 22222', specialty: 'Cancer Care' },
+                { id: 'h3', name: 'Max Super Speciality Hospital', bedsAvailable: 20, phone: '+91 77773 33333', specialty: 'Multi-Specialty' },
+                { id: 'h4', name: 'AIIMS Cancer Institute', bedsAvailable: 30, phone: '+91 66664 44444', specialty: 'Oncology ER' },
             ];
 
-            const processed = mockData.map((h) => {
-                const distanceVal = calculateHaversineDistance(coords.lat, coords.lng, h.coords.lat, h.coords.lng);
+            const processed = mockData.map((h, i) => {
+                const angle = (i * 2 * Math.PI) / mockData.length;
+                const radius = 0.008 + (Math.random() * 0.015);
+                const hLoc = {
+                    lat: coords.lat + radius * Math.sin(angle),
+                    lng: coords.lng + radius * Math.cos(angle)
+                };
+                const distanceVal = calculateHaversineDistance(coords.lat, coords.lng, hLoc.lat, hLoc.lng);
                 return {
                     ...h,
                     distance: distanceVal.toFixed(1),
                     wait: `${Math.floor(distanceVal * 2 + 4)} min`,
+                    coords: hLoc
                 };
             }).sort((a, b) => parseFloat(a.distance) - parseFloat(b.distance));
 
@@ -237,7 +320,6 @@ const EmergencyLocator = ({ user }) => {
         }
     };
 
-    // Calculate real geographic distance
     const calculateHaversineDistance = (lat1, lon1, lat2, lon2) => {
         const R = 6371; // Earth radius in km
         const dLat = (lat2 - lat1) * Math.PI / 180;
@@ -250,43 +332,10 @@ const EmergencyLocator = ({ user }) => {
         return R * c;
     };
 
-    // Simulate address search & geocoding
-    const handleAddressSearch = (e) => {
-        e.preventDefault();
-        if (!searchAddress.trim()) return;
-
-        setIsGeocoding(true);
-        setTimeout(() => {
-            // Shift coordinates slightly based on input text to simulate geocoding
-            const charSum = searchAddress.split('').reduce((acc, char) => acc + char.charCodeAt(0), 0);
-            const deltaLat = ((charSum % 30) - 15) * 0.0015;
-            const deltaLng = (((charSum * 3) % 30) - 15) * 0.0015;
-
-            const newCoords = {
-                lat: 28.6272 + deltaLat,
-                lng: 77.3726 + deltaLng
-            };
-
-            setPatientCoords(newCoords);
-            setCurrentAddress(searchAddress);
-            setIsGeocoding(false);
-            fetchHospitals(newCoords);
-            setSelectedHospital(null);
-        }, 800);
-    };
-
-    // Reset GPS Location
     const resetToGPS = () => {
-        setIsGeocoding(true);
-        setTimeout(() => {
-            const gpsCoords = { lat: 28.6272, lng: 77.3726 };
-            setPatientCoords(gpsCoords);
-            setCurrentAddress('Sector 62, Noida, UP (GPS Loc)');
-            setSearchAddress('');
-            setIsGeocoding(false);
-            fetchHospitals(gpsCoords);
-            setSelectedHospital(null);
-        }, 600);
+        acquireRealLocation();
+        setSearchAddress('');
+        setSelectedHospital(null);
     };
 
     const handleSelectHospital = (hospital) => {
@@ -301,7 +350,7 @@ const EmergencyLocator = ({ user }) => {
                 headers: { Authorization: `Bearer ${token}` }
             });
         } catch (error) {
-            console.error('Emergency request failed, proceeding with simulation', error);
+            console.error('Emergency request failed', error);
         } finally {
             setRequestingId(null);
             setDispatched(hospital);
@@ -337,10 +386,10 @@ const EmergencyLocator = ({ user }) => {
         const isEast = patientCoords.lng < selectedHospital.coords.lng;
         
         return [
-            { text: `Exit from ${currentAddress.split(',')[0]} and drive towards main highway intersection.`, dist: '400 m' },
-            { text: `Turn ${isEast ? 'Right' : 'Left'} and merge onto Noida Ring Expressway.`, dist: '1.2 km' },
-            { text: `Drive straight, passing green belts. Follow signs for ${isNorth ? 'Delhi' : 'Greater Noida'}.`, dist: '2.5 km' },
-            { text: `Take the slip road towards ${selectedHospital.name} Ambulance Bay entrance.`, dist: '300 m' }
+            { text: `Exit from your location onto the nearest main arterial road.`, dist: '400 m' },
+            { text: `Turn ${isEast ? 'Right' : 'Left'} and merge onto the primary ring road.`, dist: '1.2 km' },
+            { text: `Drive straight, passing local green belts. Follow signs for emergency services.`, dist: '2.5 km' },
+            { text: `Take the slip road towards the ${selectedHospital.name} Ambulance Bay entrance.`, dist: '300 m' }
         ];
     };
 
@@ -387,7 +436,7 @@ const EmergencyLocator = ({ user }) => {
                         onClick={resetToGPS}
                         className="flex-1 md:flex-initial flex items-center justify-center gap-1.5 px-4 py-2.5 bg-slate-50 hover:bg-slate-100 text-slate-600 rounded-2xl text-xs font-bold transition-all border border-slate-200"
                     >
-                        <Crosshair size={14} /> Locate Me
+                        <Crosshair size={14} className={isGeocoding ? "animate-spin" : ""} /> Locate Me
                     </button>
                     <button 
                         type="submit" 
@@ -453,11 +502,9 @@ const EmergencyLocator = ({ user }) => {
 
                 {/* Real Dark Map (CartoDB Dark Matter Theme) */}
                 <div className="lg:col-span-3 bg-slate-950 border border-slate-800 rounded-3xl overflow-hidden h-[440px] relative shadow-lg">
-                    {/* Map container DOM element */}
                     <div ref={mapRef} className="absolute inset-0 z-0 h-full w-full bg-slate-950" />
 
                     <style>{`
-                        /* CSS animation for red animated route path */
                         .route-path-animation {
                             stroke-dasharray: 10, 8;
                             animation: dashRoute 12s linear infinite;
@@ -467,7 +514,6 @@ const EmergencyLocator = ({ user }) => {
                                 stroke-dashoffset: -1000;
                             }
                         }
-                        /* Dark leaflet styling tweaks to integrate nicely with dashboard */
                         .leaflet-container {
                             background-color: #020617 !important;
                             font-family: inherit !important;
