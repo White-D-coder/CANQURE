@@ -21,6 +21,7 @@
     "tesseract.js": "^7.0.0"
   },
   "scripts": {
+    "build": "prisma generate",
     "dev": "nodemon src/main.js",
     "start": "node src/main.js"
   },
