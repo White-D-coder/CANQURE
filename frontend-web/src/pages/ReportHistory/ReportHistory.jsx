@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { motion } from 'framer-motion';
+import { motion, AnimatePresence } from 'framer-motion';
 import { 
     FileText, 
     Download, 
@@ -9,7 +9,8 @@ import {
     ExternalLink,
     ChevronRight,
     Table as TableIcon,
-    AlertCircle
+    AlertCircle,
+    Activity
 } from 'lucide-react';
 import api from '../../api/axios';
 import { useAuth } from '../../contexts/AuthContext';
