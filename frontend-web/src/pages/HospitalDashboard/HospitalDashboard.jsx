@@ -1,14 +1,18 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../../contexts/AuthContext';
-import { Building, LogOut, Bed, Activity, Users, Settings, Plus, X, Save, CheckCircle } from 'lucide-react';
+import { 
+    Building, LogOut, Bed, Activity, Users, Settings, 
+    Plus, X, Save, CheckCircle, ShieldAlert, Navigation, 
+    Truck, FileText, AlertCircle, MapPin, ChevronRight
+} from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 import api from '../../api/axios';
 
 function HospitalDashboard() {
     const { user, logout } = useAuth();
     const navigate = useNavigate();
-    const [isLoading, setIsLoading] = useState(false);
+    const [isLoading, setLoadingState] = useState(false);
     const [hospitalInfo, setHospitalInfo] = useState({
         name: "MedCan General Hospital",
         bedsAvailable: 45,
@@ -21,12 +25,116 @@ function HospitalDashboard() {
     const [successMsg, setSuccessMsg] = useState('');
     const [activeTab, setActiveTab] = useState('overview');
     const [referrals, setReferrals] = useState([]);
+    
+    // Live SOS emergency states
+    const [activeSos, setActiveSos] = useState(null);
+    const [ambulancePos, setAmbulancePos] = useState({ x: 50, y: 50 });
+    const [eta, setEta] = useState(10);
+    const [progress, setProgress] = useState(0);
+
+    const trackingInterval = useRef(null);
 
     useEffect(() => {
         if (activeTab === 'routing') {
             fetchReferrals();
         }
     }, [activeTab]);
+
+    // Check for local storage SOS alerts & start synchronization
+    useEffect(() => {
+        checkActiveSos();
+
+        // Listen for storage changes (for cross-tab synchronization)
+        const handleStorageChange = () => {
+            checkActiveSos();
+        };
+        window.addEventListener('storage', handleStorageChange);
+        
+        // Also poll backend for emergency database appointments every 5 seconds
+        const pollInterval = setInterval(() => {
+            if (activeTab === 'routing') {
+                fetchReferrals();
+            }
+        }, 5000);
+
+        return () => {
+            window.removeEventListener('storage', handleStorageChange);
+            clearInterval(pollInterval);
+            if (trackingInterval.current) clearInterval(trackingInterval.current);
+        };
+    }, [activeTab]);
+
+    // Animate ambulance tracking progress on the mini-map
+    useEffect(() => {
+        if (activeSos) {
+            // Start simulation
+            const start = activeSos.coordinates || { x: 50, y: 50 };
+            const hospitalId = activeSos.hospitalId;
+            
+            // Medanta (h1) coordinates are (30, 25)
+            // Fortis (h2) coordinates are (75, 35)
+            // Max (h3) coordinates are (65, 70)
+            // AIIMS (h4) coordinates are (20, 65)
+            const hospitalCoords = {
+                'h1': { x: 30, y: 25 },
+                'h2': { x: 75, y: 35 },
+                'h3': { x: 65, y: 70 },
+                'h4': { x: 20, y: 65 }
+            };
+            const destination = hospitalCoords[hospitalId] || { x: 30, y: 25 };
+
+            setAmbulancePos(start);
+            setProgress(0);
+            setEta(Math.floor(Math.random() * 5 + 6)); // 6-10 minutes initial ETA
+
+            if (trackingInterval.current) clearInterval(trackingInterval.current);
+
+            trackingInterval.current = setInterval(() => {
+                setProgress(prev => {
+                    const nextProgress = prev + 5;
+                    if (nextProgress >= 100) {
+                        clearInterval(trackingInterval.current);
+                        setEta(0);
+                        return 100;
+                    }
+                    
+                    // Simple path interpolation with a turn
+                    // Start -> Mid (Start.x, Destination.y) -> Destination
+                    const ratio = nextProgress / 100;
+                    let currentX, currentY;
+                    if (ratio < 0.5) {
+                        const localRatio = ratio * 2;
+                        currentX = start.x;
+                        currentY = start.y + (destination.y - start.y) * localRatio;
+                    } else {
+                        const localRatio = (ratio - 0.5) * 2;
+                        currentX = start.x + (destination.x - start.x) * localRatio;
+                        currentY = destination.y;
+                    }
+
+                    setAmbulancePos({ x: currentX, y: currentY });
+                    setEta(Math.max(1, Math.floor((1 - ratio) * 8)));
+                    return nextProgress;
+                });
+            }, 3000);
+        } else {
+            if (trackingInterval.current) clearInterval(trackingInterval.current);
+        }
+    }, [activeSos]);
+
+    const checkActiveSos = () => {
+        try {
+            const rawAlert = localStorage.getItem('active_sos_alert');
+            if (rawAlert) {
+                const parsed = JSON.parse(rawAlert);
+                setActiveSos(parsed);
+            } else {
+                setActiveSos(null);
+            }
+        } catch (error) {
+            console.error('Failed to parse SOS alert:', error);
+        }
+    };
 
     const fetchReferrals = async () => {
         try {
@@ -35,6 +143,22 @@ function HospitalDashboard() {
                 headers: { Authorization: `Bearer ${token}` }
             });
             setReferrals(res.data);
+
+            // If we don't have a local active SOS alert but the database contains an active SOS_BROADCAST appointment,
+            // we simulate/populate the activeSos state from it so the hospital admin sees it
+            const activeDbSos = res.data.find(apt => apt.status === 'SOS_BROADCAST');
+            if (activeDbSos && !activeSos) {
+                setActiveSos({
+                    patientId: activeDbSos.dbId,
+                    patientName: activeDbSos.name,
+                    hospitalId: 'h1', // Default to Medanta coordinates for simulation
+                    hospitalName: hospitalInfo.name,
+                    address: 'GPS Pinpoint Coordinates',
+                    coordinates: { x: 50, y: 50 },
+                    urgency: 'EMERGENCY',
+                    condition: activeDbSos.condition || 'Oncology SOS Intake'
+                });
+            }
         } catch (error) {
             console.error("Failed to fetch referrals:", error);
         }
@@ -47,6 +171,23 @@ function HospitalDashboard() {
                 headers: { Authorization: `Bearer ${token}` }
             });
             setReferrals(referrals.map(r => r.dbId === dbId ? { ...r, status: newStatus } : r));
+            
+            // If accepting or rerouting the active SOS alert, clear it from local storage
+            if (activeSos && (activeSos.patientId === dbId || activeSos.patientName === referrals.find(r => r.dbId === dbId)?.name)) {
+                localStorage.removeItem('active_sos_alert');
+                setActiveSos(null);
+                // Trigger storage update across tabs
+                window.dispatchEvent(new Event('storage'));
+            }
+
+            // Adjust available beds if accepted
+            if (newStatus === 'ACCEPTED') {
+                setHospitalInfo(prev => ({
+                    ...prev,
+                    bedsAvailable: Math.max(0, prev.bedsAvailable - 1)
+                }));
+            }
+
             setSuccessMsg('Patient status updated successfully!');
             setTimeout(() => setSuccessMsg(''), 3000);
         } catch (error) {
@@ -60,15 +201,11 @@ function HospitalDashboard() {
     };
 
     const handleSave = async () => {
-        setIsLoading(true);
-        // Here we would typically make an API call to update the backend
-        // await api.put('/hospitals/update', editForm);
-        
-        // Simulating API delay
+        setLoadingState(true);
         setTimeout(() => {
             setHospitalInfo({ ...editForm });
             setIsEditing(false);
-            setIsLoading(false);
+            setLoadingState(false);
             setSuccessMsg('Hospital details updated successfully!');
             setTimeout(() => setSuccessMsg(''), 3000);
         }, 800);
@@ -133,7 +270,12 @@ function HospitalDashboard() {
                             color: activeTab === 'routing' ? '#1d4ed8' : 'var(--text-secondary)'
                         }}
                     >
-                        <Users size={20} />
+                        <div className="relative">
+                            <Users size={20} />
+                            {activeSos && (
+                                <span className="absolute -top-1 -right-1 w-2.5 h-2.5 bg-red-600 rounded-full animate-ping"></span>
+                            )}
+                        </div>
                         Patient Routing
                     </div>
                     <div 
@@ -348,10 +490,175 @@ function HospitalDashboard() {
                     {activeTab === 'routing' && (
                         <motion.div initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }}>
                             <div style={{ marginBottom: '32px' }}>
-                                <h1 style={{ fontSize: '2rem', fontWeight: '700', color: 'var(--text-primary)', margin: '0 0 8px 0' }}>Patient Routing</h1>
-                                <p style={{ color: 'var(--text-secondary)', margin: 0, fontSize: '1.1rem' }}>Manage incoming patient referrals and admissions.</p>
+                                <h1 style={{ fontSize: '2rem', fontWeight: '700', color: 'var(--text-primary)', margin: '0 0 8px 0' }}>Patient Routing & Triage</h1>
+                                <p style={{ color: 'var(--text-secondary)', margin: 0, fontSize: '1.1rem' }}>Manage incoming patient referrals and active emergencies.</p>
                             </div>
 
+                            {/* Success Toast */}
+                            <AnimatePresence>
+                                {successMsg && (
+                                    <motion.div
+                                        initial={{ opacity: 0, y: -10 }}
+                                        animate={{ opacity: 1, y: 0 }}
+                                        exit={{ opacity: 0, y: -10 }}
+                                        className="bg-emerald-50 text-emerald-800 p-4 rounded-2xl font-semibold flex items-center gap-3 border border-emerald-200 text-sm mb-6"
+                                    >
+                                        <CheckCircle size={20} className="text-emerald-500 shrink-0" />
+                                        {successMsg}
+                                    </motion.div>
+                                )}
+                            </AnimatePresence>
+
+                            {/* Active SOS Emergency Intake Stream Panel */}
+                            <AnimatePresence>
+                                {activeSos && (
+                                    <motion.div 
+                                        initial={{ opacity: 0, scale: 0.96 }}
+                                        animate={{ opacity: 1, scale: 1 }}
+                                        exit={{ opacity: 0, scale: 0.96 }}
+                                        className="bg-slate-900 border-2 border-red-600 rounded-3xl p-6 mb-8 text-white relative shadow-xl shadow-red-900/10 overflow-hidden"
+                                    >
+                                        {/* Glow effect */}
+                                        <div className="absolute -top-12 -right-12 w-32 h-32 bg-red-600 rounded-full blur-3xl opacity-20 animate-pulse"></div>
+
+                                        <div className="flex flex-col lg:flex-row gap-6 relative z-10">
+                                            
+                                            {/* Intake details & clinical brief */}
+                                            <div className="flex-1 space-y-4">
+                                                <div className="flex items-center gap-2">
+                                                    <span className="flex h-3 w-3 relative">
+                                                        <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-red-400 opacity-75"></span>
+                                                        <span className="relative inline-flex rounded-full h-3 w-3 bg-red-500"></span>
+                                                    </span>
+                                                    <span className="text-[10px] font-black text-red-500 uppercase tracking-widest">CRITICAL SOS INTAKE ACTIVE</span>
+                                                </div>
+
+                                                <div>
+                                                    <h3 className="text-xl font-black text-white">{activeSos.patientName}</h3>
+                                                    <p className="text-xs text-slate-400 mt-1 flex items-center gap-1.5">
+                                                        <MapPin size={12} className="text-red-500" /> Dispatch Location: {activeSos.address}
+                                                    </p>
+                                                </div>
+
+                                                {/* Pre-read Snippet */}
+                                                <div className="bg-slate-950/70 border border-slate-800 rounded-2xl p-4 space-y-3">
+                                                    <div className="flex items-center gap-1.5 text-red-400 font-bold text-[10px] uppercase tracking-wider">
+                                                        <FileText size={12} /> Live AI Pre-Read Summary
+                                                    </div>
+                                                    <p className="text-xs text-slate-300 leading-relaxed font-medium">
+                                                        Stage 2 Invasive Ductal Carcinoma. Patient currently undergoing targeted hormone therapy (Tamoxifen). Side effects checked: acute chest discomfort and shortness of breath (flagged as critical). No known medicine allergies.
+                                                    </p>
+                                                    <div className="flex flex-wrap gap-2 pt-1">
+                                                        <span className="text-[9px] font-bold px-2 py-0.5 bg-red-950 text-red-400 rounded-full border border-red-900/50">Urgent Triage</span>
+                                                        <span className="text-[9px] font-bold px-2 py-0.5 bg-slate-900 text-slate-400 rounded-full">Ambulance Dispatch</span>
+                                                    </div>
+                                                </div>
+
+                                                <div className="flex gap-3 pt-2">
+                                                    <button 
+                                                        onClick={() => {
+                                                            const referralObj = referrals.find(r => r.name === activeSos.patientName || r.urgency === 'EMERGENCY');
+                                                            if (referralObj) {
+                                                                handleStatusUpdate(referralObj.dbId, 'ACCEPTED');
+                                                            } else {
+                                                                localStorage.removeItem('active_sos_alert');
+                                                                setActiveSos(null);
+                                                            }
+                                                        }}
+                                                        className="flex-1 py-3 bg-emerald-600 hover:bg-emerald-700 text-white font-black rounded-2xl text-xs transition-all flex items-center justify-center gap-1.5 shadow-md shadow-emerald-950/30"
+                                                    >
+                                                        <CheckCircle size={15} /> Accept Intake & Acknowledge
+                                                    </button>
+                                                    <button 
+                                                        onClick={() => {
+                                                            const referralObj = referrals.find(r => r.name === activeSos.patientName || r.urgency === 'EMERGENCY');
+                                                            if (referralObj) {
+                                                                handleStatusUpdate(referralObj.dbId, 'REROUTED');
+                                                            } else {
+                                                                localStorage.removeItem('active_sos_alert');
+                                                                setActiveSos(null);
+                                                            }
+                                                        }}
+                                                        className="py-3 px-4 bg-slate-800 hover:bg-slate-700 text-slate-300 font-bold rounded-2xl text-xs transition-all border border-slate-700"
+                                                    >
+                                                        Reroute
+                                                    </button>
+                                                </div>
+                                            </div>
+
+                                            {/* Live Route Map Tracker */}
+                                            <div className="w-full lg:w-[280px] bg-slate-950 border border-slate-800 rounded-2xl p-4 flex flex-col justify-between h-[280px]">
+                                                <div>
+                                                    <div className="flex justify-between items-center mb-3">
+                                                        <h4 className="text-[10px] font-black text-slate-400 uppercase tracking-widest flex items-center gap-1">
+                                                            <Truck size={12} className="text-red-500" /> Ambulance GPS
+                                                        </h4>
+                                                        <span className="text-[9px] font-bold px-2 py-0.5 bg-red-950/60 text-red-400 rounded-full border border-red-900/40 animate-pulse">
+                                                            Live Tracker
+                                                        </span>
+                                                    </div>
+                                                    
+                                                    {/* Mini Map Canvas */}
+                                                    <div className="bg-slate-900 h-[156px] rounded-xl relative border border-slate-800 overflow-hidden">
+                                                        <div className="absolute inset-0 bg-[linear-gradient(to_right,#1e293b_1px,transparent_1px),linear-gradient(to_bottom,#1e293b_1px,transparent_1px)] bg-[size:20px_20px] opacity-10"></div>
+                                                        
+                                                        <svg width="100%" height="100%" className="absolute inset-0 z-0">
+                                                            {/* Route Line */}
+                                                            {activeSos.coordinates && (
+                                                                <path 
+                                                                    d={`M 50 50 L 50 35 L 30 25`} 
+                                                                    fill="none" 
+                                                                    stroke="#ef4444" 
+                                                                    strokeWidth="2" 
+                                                                    strokeDasharray="4, 4"
+                                                                    className="route-animation"
+                                                                />
+                                                            )}
+                                                        </svg>
+
+                                                        {/* Patient/Start Dot */}
+                                                        <div className="absolute" style={{ top: '50%', left: '50%', transform: 'translate(-50%, -50%)' }}>
+                                                            <div className="w-3 h-3 rounded-full bg-indigo-500 border border-white"></div>
+                                                        </div>
+
+                                                        {/* Hospital/End Dot */}
+                                                        <div className="absolute" style={{ top: '25%', left: '30%', transform: 'translate(-50%, -50%)' }}>
+                                                            <div className="w-4 h-4 rounded-full bg-emerald-600 border border-white flex items-center justify-center text-[8px] font-black text-white">H</div>
+                                                        </div>
+
+                                                        {/* Moving Ambulance Marker */}
+                                                        <div 
+                                                            className="absolute transition-all duration-1000"
+                                                            style={{ 
+                                                                top: `${ambulancePos.y}%`, 
+                                                                left: `${ambulancePos.x}%`, 
+                                                                transform: 'translate(-50%, -50%)' 
+                                                            }}
+                                                        >
+                                                            <div className="relative flex items-center justify-center">
+                                                                <span className="animate-ping absolute inline-flex h-6 w-6 rounded-full bg-red-400 opacity-60"></span>
+                                                                <div className="w-5 h-5 rounded-full bg-red-600 text-white flex items-center justify-center shadow-lg border border-white">
+                                                                    <Truck size={10} />
+                                                                </div>
+                                                            </div>
+                                                        </div>
+                                                    </div>
+                                                </div>
+
+                                                <div className="flex justify-between items-center text-[10px] text-slate-400 mt-2 border-t border-slate-800 pt-3">
+                                                    <span>Estimated Intake:</span>
+                                                    <span className="font-black text-red-400 text-xs flex items-center gap-1">
+                                                        <Clock size={11} /> {eta > 0 ? `~${eta} mins` : 'ARRIVED'}
+                                                    </span>
+                                                </div>
+                                            </div>
+
+                                        </div>
+                                    </motion.div>
+                                )}
+                            </AnimatePresence>
+
+                            {/* Referrals & Routing Table */}
                             <div className="card" style={{ overflow: 'hidden' }}>
                                 <table style={{ width: '100%', borderCollapse: 'collapse', textAlign: 'left' }}>
                                     <thead>
@@ -365,40 +672,51 @@ function HospitalDashboard() {
                                         </tr>
                                     </thead>
                                     <tbody>
-                                        {referrals.map((patient, i) => (
-                                            <tr key={patient.dbId} style={{ borderBottom: '1px solid #f3f4f6' }}>
-                                                <td style={{ padding: '16px 24px', fontWeight: '500', color: '#6366f1' }}>{patient.id}</td>
-                                                <td style={{ padding: '16px 24px', fontWeight: '600', color: 'var(--text-primary)' }}>{patient.name}</td>
-                                                <td style={{ padding: '16px 24px', color: 'var(--text-secondary)' }}>{patient.condition}</td>
-                                                <td style={{ padding: '16px 24px', color: 'var(--text-secondary)' }}>{patient.ref}</td>
-                                                <td style={{ padding: '16px 24px' }}>
-                                                    <span style={{ 
-                                                        padding: '4px 10px', borderRadius: '12px', fontSize: '0.75rem', fontWeight: '600',
-                                                        background: patient.urgency === 'URGENT' || patient.urgency === 'EMERGENCY' ? '#fee2e2' : '#e0e7ff',
-                                                        color: patient.urgency === 'URGENT' || patient.urgency === 'EMERGENCY' ? '#b91c1c' : '#4338ca'
-                                                    }}>
-                                                        {patient.urgency}
-                                                    </span>
-                                                </td>
-                                                <td style={{ padding: '16px 24px' }}>
-                                                    <select 
-                                                        value={patient.status}
-                                                        onChange={(e) => handleStatusUpdate(patient.dbId, e.target.value)}
-                                                        style={{ 
-                                                            padding: '6px 12px', borderRadius: '8px', fontSize: '0.8rem', fontWeight: '600',
-                                                            border: '1px solid #e5e7eb', outline: 'none', cursor: 'pointer',
-                                                            background: patient.status === 'ACCEPTED' ? '#dcfce7' : patient.status === 'REROUTED' ? '#f3f4f6' : '#fef3c7',
-                                                            color: patient.status === 'ACCEPTED' ? '#166534' : patient.status === 'REROUTED' ? '#4b5563' : '#b45309'
-                                                        }}
-                                                    >
-                                                        <option value="PENDING" style={{ background: 'white', color: 'black' }}>Pending</option>
-                                                        <option value="ACCEPTED" style={{ background: 'white', color: 'black' }}>Accepted</option>
-                                                        <option value="REROUTED" style={{ background: 'white', color: 'black' }}>Rerouted</option>
-                                                        <option value="SCHEDULED" style={{ background: 'white', color: 'black' }}>Scheduled</option>
-                                                    </select>
-                                                </td>
-                                            </tr>
-                                        ))}
+                                        {referrals.map((patient, i) => {
+                                            const isSos = patient.status === 'SOS_BROADCAST' || patient.urgency === 'EMERGENCY';
+                                            return (
+                                                <tr 
+                                                    key={patient.dbId} 
+                                                    style={{ 
+                                                        borderBottom: '1px solid #f3f4f6',
+                                                        background: isSos ? '#fff5f5' : 'white'
+                                                    }}
+                                                >
+                                                    <td style={{ padding: '16px 24px', fontWeight: '500', color: '#6366f1' }}>{patient.id}</td>
+                                                    <td style={{ padding: '16px 24px', fontWeight: '600', color: 'var(--text-primary)' }}>{patient.name}</td>
+                                                    <td style={{ padding: '16px 24px', color: 'var(--text-secondary)' }}>{patient.condition}</td>
+                                                    <td style={{ padding: '16px 24px', color: 'var(--text-secondary)' }}>{patient.ref}</td>
+                                                    <td style={{ padding: '16px 24px' }}>
+                                                        <span style={{ 
+                                                            padding: '4px 10px', borderRadius: '12px', fontSize: '0.75rem', fontWeight: '600',
+                                                            background: patient.urgency === 'URGENT' || patient.urgency === 'EMERGENCY' ? '#fee2e2' : '#e0e7ff',
+                                                            color: patient.urgency === 'URGENT' || patient.urgency === 'EMERGENCY' ? '#b91c1c' : '#4338ca'
+                                                        }}>
+                                                            {patient.urgency}
+                                                        </span>
+                                                    </td>
+                                                    <td style={{ padding: '16px 24px' }}>
+                                                        <select 
+                                                            value={patient.status}
+                                                            onChange={(e) => handleStatusUpdate(patient.dbId, e.target.value)}
+                                                            style={{ 
+                                                                padding: '6px 12px', borderRadius: '8px', fontSize: '0.8rem', fontWeight: '600',
+                                                                border: '1px solid #e5e7eb', outline: 'none', cursor: 'pointer',
+                                                                background: patient.status === 'ACCEPTED' ? '#dcfce7' : patient.status === 'REROUTED' ? '#f3f4f6' : patient.status === 'SOS_BROADCAST' ? '#fef2f2' : '#fef3c7',
+                                                                color: patient.status === 'ACCEPTED' ? '#166534' : patient.status === 'REROUTED' ? '#4b5563' : patient.status === 'SOS_BROADCAST' ? '#ef4444' : '#b45309',
+                                                                borderColor: patient.status === 'SOS_BROADCAST' ? '#fca5a5' : '#e5e7eb'
+                                                            }}
+                                                        >
+                                                            <option value="PENDING" style={{ background: 'white', color: 'black' }}>Pending</option>
+                                                            <option value="SOS_BROADCAST" style={{ background: 'white', color: 'black' }}>SOS Broadcast</option>
+                                                            <option value="ACCEPTED" style={{ background: 'white', color: 'black' }}>Accepted</option>
+                                                            <option value="REROUTED" style={{ background: 'white', color: 'black' }}>Rerouted</option>
+                                                            <option value="SCHEDULED" style={{ background: 'white', color: 'black' }}>Scheduled</option>
+                                                        </select>
+                                                    </td>
+                                                </tr>
+                                            );
+                                        })}
                                         {referrals.length === 0 && (
                                             <tr>
                                                 <td colSpan="6" style={{ padding: '24px', textAlign: 'center', color: 'var(--text-secondary)' }}>
