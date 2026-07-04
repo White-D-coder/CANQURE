@@ -1,5 +1,14 @@
 import { useState, useEffect, useRef } from 'react';
 import { useAuth } from '../../contexts/AuthContext';
+import PatientSnapshot from './components/PatientSnapshot';
+import MedicalTimeline from './components/MedicalTimeline';
+import DocumentVault from './components/DocumentVault';
+import MedicationTable from './components/MedicationTable';
+import PrescriptionWriter from './components/PrescriptionWriter';
+import QREmergencyCard from './components/QREmergencyCard';
+import CareGaps from './components/CareGaps';
+import RedFlagAlerts from './components/RedFlagAlerts';
+import { useDoctorStore } from '../../store/useDoctorStore';
 import {
     getDoctorAppointments,
     getPatientDetails,
@@ -882,123 +891,49 @@ const DoctorDashboard = () => {
                                 </div>
                             </div>
 
-                            {patientLoading ? (
-                                <div className="flex items-center justify-center py-32">
-                                    <div className="w-10 h-10 border-4 border-indigo-200 border-t-indigo-600 rounded-full animate-spin" />
-                                </div>
-                            ) : (
-                                <div className="p-8">
-
-                                    {/* Overview Section */}
-                                    {activeWorkspaceSection === 'overview' && (
-                                        <div className="space-y-8">
-                                            {/* Patient Snapshot */}
-                                            {patientMeta && (
-                                                <div className="bg-white rounded-3xl border border-slate-200/80 shadow-[0_1px_4px_rgba(0,0,0,0.03)] p-7">
-                                                    <div className="flex flex-col md:flex-row gap-8">
-                                                        <div className="flex items-center gap-5">
-                                                            <div className="w-20 h-20 rounded-3xl bg-gradient-to-br from-indigo-100 to-indigo-200 flex items-center justify-center text-indigo-700 font-black text-3xl shrink-0">
-                                                                {selectedPatient.name?.charAt(0)}
-                                                            </div>
-                                                            <div>
-                                                                <h2 className="text-2xl font-black text-slate-900">{selectedPatient.name}</h2>
-                                                                <p className="text-slate-500 mt-1">{patientMeta.age}y · {patientMeta.gender} · Blood: {patientMeta.bloodType}</p>
-                                                                <div className="flex gap-2 mt-2 flex-wrap">
-                                                                    <span className="px-3 py-1 bg-indigo-50 text-indigo-700 text-xs font-bold rounded-full border border-indigo-100">{patientMeta.cancerType}</span>
-                                                                    <span className="px-2 py-1 bg-slate-100 text-slate-600 text-[10px] font-bold rounded-full">ID: #{selectedPatient.id?.slice(-6)?.toUpperCase()}</span>
-                                                                </div>
-                                                            </div>
-                                                        </div>
-                                                        <div className="flex-1 grid grid-cols-1 sm:grid-cols-3 gap-4">
-                                                            <div className="p-4 bg-slate-50 rounded-2xl border border-slate-100">
-                                                                <p className="text-[9px] font-black text-slate-400 uppercase tracking-widest mb-1.5">Caregiver</p>
-                                                                <p className="text-sm font-semibold text-slate-900">{patientMeta.caregiver}</p>
-                                                                <p className="text-[11px] text-slate-400 flex items-center gap-1 mt-1"><Phone size={10} />{patientMeta.caregiverPhone}</p>
-                                                            </div>
-                                                            <div className="p-4 bg-slate-50 rounded-2xl border border-slate-100">
-                                                                <p className="text-[9px] font-black text-slate-400 uppercase tracking-widest mb-1.5">Pharmacy</p>
-                                                                <p className="text-sm font-semibold text-slate-900">{patientMeta.pharmacy}</p>
-                                                                <p className="text-[11px] text-slate-400 flex items-center gap-1 mt-1"><MapPin size={10} />2.4 km away</p>
-                                                            </div>
-                                                            <div className="p-4 bg-slate-50 rounded-2xl border border-slate-100">
-                                                                <p className="text-[9px] font-black text-slate-400 uppercase tracking-widest mb-1.5">Last Consult</p>
-                                                                <p className="text-sm font-semibold text-slate-900">{patientMeta.lastConsult}</p>
-                                                                <p className="text-[11px] text-red-500 font-bold mt-1">Follow-up overdue</p>
-                                                            </div>
-                                                        </div>
-                                                    </div>
-                                                </div>
-                                            )}
-
-                                            {/* AI Brief */}
-                                            {patientMeta && patientMedications.length > 0 && (
-                                                <AIPreReadBrief patient={selectedPatient} meta={patientMeta} medications={patientMedications} />
-                                            )}
-
-                                            {/* Care Gaps + Medical Vault side by side */}
-                                            <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
-                                                <CareGapDetection gaps={patientCareGaps} />
-
-                                                {/* Medical Vault */}
-                                                <div className="bg-white rounded-3xl border border-slate-200/80 shadow-[0_1px_4px_rgba(0,0,0,0.03)] overflow-hidden">
-                                                    <div className="p-6 border-b border-slate-100">
-                                                        <h3 className="font-bold text-slate-900 flex items-center gap-2"><FileHeart size={18} className="text-emerald-500" /> Medical Vault</h3>
-                                                        <p className="text-xs text-slate-400 mt-0.5">Uploaded reports and clinical documents</p>
-                                                    </div>
-                                                    <div className="p-6 space-y-3">
-                                                        {selectedPatient.Reports?.length > 0 ? selectedPatient.Reports.map(report => (
-                                                            <div key={report.id} className="p-4 bg-slate-50/60 border border-slate-100 rounded-2xl flex justify-between items-center group hover:border-slate-200 transition-all">
-                                                                <div className="flex items-center gap-3">
-                                                                    <div className="w-9 h-9 bg-white border border-slate-200 rounded-xl flex items-center justify-center">
-                                                                        <FileText size={15} className="text-slate-400" />
-                                                                    </div>
-                                                                    <div>
-                                                                        <p className="font-semibold text-slate-800 text-sm truncate max-w-[180px]">{report.reportName}</p>
-                                                                        <p className="text-[10px] text-slate-400">{new Date(report.date).toLocaleDateString()}</p>
-                                                                    </div>
-                                                                </div>
-                                                                <a href={report.reportUrl} target="_blank" rel="noreferrer"
-                                                                    className="p-2 bg-white rounded-xl border border-slate-200 text-slate-400 hover:text-indigo-600 hover:border-indigo-200 transition-all">
-                                                                    <ExternalLink size={14} />
-                                                                </a>
-                                                            </div>
-                                                        )) : (
-                                                            <div className="py-8 text-center text-slate-400 text-xs border border-dashed border-slate-200 rounded-2xl">
-                                                                No reports uploaded yet.
-                                                            </div>
-                                                        )}
-                                                    </div>
-                                                </div>
-                                            </div>
+                            <div className="p-8">
+                                {/* Overview Section */}
+                                {activeWorkspaceSection === 'overview' && (
+                                    <div className="space-y-8">
+                                        <RedFlagAlerts patientId={selectedPatient.id} />
+                                        <PatientSnapshot patientId={selectedPatient.id} patientName={selectedPatient.name} />
+                                        <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
+                                            <CareGaps patientId={selectedPatient.id} />
+                                            <DocumentVault patientId={selectedPatient.id} />
                                         </div>
-                                    )}
+                                    </div>
+                                )}
 
-                                    {/* Timeline Section */}
-                                    {activeWorkspaceSection === 'timeline' && (
-                                        <TreatmentTimeline events={patientTimeline} />
-                                    )}
+                                {/* Timeline Section */}
+                                {activeWorkspaceSection === 'timeline' && (
+                                    <MedicalTimeline patientId={selectedPatient.id} />
+                                )}
 
-                                    {/* Medications Section */}
-                                    {activeWorkspaceSection === 'medications' && patientMedications.length > 0 && (
-                                        <MedicationContinuityEngine medications={patientMedications} onRefill={handleRefillRequest} />
-                                    )}
+                                {/* Medications Section */}
+                                {activeWorkspaceSection === 'medications' && (
+                                    <MedicationTable patientId={selectedPatient.id} />
+                                )}
 
-                                    {/* Pharmacy Section */}
-                                    {activeWorkspaceSection === 'pharmacy' && patientMedications.length > 0 && (
-                                        <PharmacyCoordination medications={patientMedications} />
-                                    )}
+                                {/* Pharmacy Section */}
+                                {activeWorkspaceSection === 'pharmacy' && patientMedications.length > 0 && (
+                                    <PharmacyCoordination medications={patientMedications} />
+                                )}
 
-                                    {/* Consultation Section */}
-                                    {activeWorkspaceSection === 'consultation' && (
-                                        <ConsultationWorkspace patient={selectedPatient} doctorId={user.id} onRefresh={() => handleViewPatient(selectedPatient.id)} />
-                                    )}
+                                {/* Consultation Section */}
+                                {activeWorkspaceSection === 'consultation' && (
+                                    <PrescriptionWriter 
+                                        patientId={selectedPatient.id} 
+                                        patientName={selectedPatient.name} 
+                                        doctorId={user.id} 
+                                        doctorName={user.name} 
+                                    />
+                                )}
 
-                                    {/* Emergency Section */}
-                                    {activeWorkspaceSection === 'emergency' && patientMeta && (
-                                        <EmergencyIntelligencePackage patient={selectedPatient} meta={patientMeta} medications={patientMedications} />
-                                    )}
-                                </div>
-                            )}
+                                {/* Emergency Section */}
+                                {activeWorkspaceSection === 'emergency' && (
+                                    <QREmergencyCard patientId={selectedPatient.id} patientName={selectedPatient.name} />
+                                )}
+                            </div>
                         </motion.div>
                     ) : (
 

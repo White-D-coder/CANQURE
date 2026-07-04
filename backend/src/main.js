@@ -14,6 +14,7 @@ import pharmacyOperationsRoutes from './modules/pharmacy_operations/pharmacy_ope
 import notificationsRoutes from './modules/notifications/notifications.routes.js';
 import analyticsRoutes from './modules/analytics/analytics.routes.js';
 import auditRoutes from './modules/audit/audit.routes.js';
+import doctorPortalRoutes from './modules/doctor_portal/doctor_portal.routes.js';
 
 dotenv.config();
 
@@ -63,6 +64,9 @@ apiRouter.use('/medicinal', express.Router().post('/risk', analyticsRoutes)); //
 
 // 11. Audit Context (Compliance logs)
 apiRouter.use('/audit', auditRoutes); // Mounts /audit/logs
+
+// 12. Doctor Portal Context (Clinical data views)
+apiRouter.use('/doctor', doctorPortalRoutes);
 
 app.get('/', (req, res) => {
     res.send("Welcome to CAN-QURE Modular Backend Service");
