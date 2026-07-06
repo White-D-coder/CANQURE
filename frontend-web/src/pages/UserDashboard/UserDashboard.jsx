@@ -1550,12 +1550,16 @@ const UserDashboard = () => {
                                                                 {isMapExpanded ? 'Hide Map' : 'Track Delivery'}
                                                             </button>
                                                         )}
-                                                        {order.status === 'HANDOVER_PENDING' && (
+                                                        {['OUT_FOR_DELIVERY', 'ARRIVING', 'HANDOVER_PENDING'].includes(order.status) && (
                                                             <button
                                                                 onClick={() => handleConfirmHandover(order.id)}
-                                                                className="px-4 py-2 bg-emerald-600 hover:bg-emerald-700 text-white rounded-lg text-xs font-semibold shadow-sm transition-all flex items-center gap-1"
+                                                                className={`px-4 py-2 text-white rounded-lg text-xs font-semibold shadow-sm transition-all flex items-center gap-1 ${
+                                                                    order.status === 'HANDOVER_PENDING'
+                                                                        ? 'bg-emerald-600 hover:bg-emerald-700'
+                                                                        : 'bg-indigo-600 hover:bg-indigo-700'
+                                                                }`}
                                                             >
-                                                                <ShieldCheck size={14} /> Verify Handover
+                                                                <ShieldCheck size={14} /> {order.status === 'HANDOVER_PENDING' ? 'Verify Handover' : 'Confirm Handover'}
                                                             </button>
                                                         )}
                                                         <span className="text-xs font-semibold text-slate-500 shrink-0 ml-2">Est: {order.deliveryTime}</span>

@@ -71,6 +71,14 @@ async function runTests() {
     updated = await service.updateRefillOrderStatus(order.id, "PACKED");
     console.log(`✓ State Transition -> PACKED: Status = ${updated.status}`);
 
+    // Fail case A: Confirming from wrong status (not in transit yet)
+    try {
+        await service.confirmRefillDelivery(order.id, patient.id);
+        console.error("✗ Fail Case A failed: Allowed confirmation directly from PACKED status.");
+    } catch (e) {
+        console.log(`✓ Fail Case A correct: Enforced in-transit verification constraint. Error: "${e.message}"`);
+    }
+
     // OUT_FOR_DELIVERY
     updated = await service.updateRefillOrderStatus(order.id, "OUT_FOR_DELIVERY");
     console.log(`✓ State Transition -> OUT_FOR_DELIVERY: Status = ${updated.status}`);
@@ -81,14 +89,6 @@ async function runTests() {
     // 4. Test Delivery Confirmation Validation (Fail cases)
     console.log("\n--- TEST 3: Delivery Confirmation Fail Cases ---");
     
-    // Fail case A: Confirming from wrong status (not HANDOVER_PENDING yet)
-    try {
-        await service.confirmRefillDelivery(order.id, patient.id);
-        console.error("✗ Fail Case A failed: Enforces HANDOVER_PENDING but allowed confirmation directly from OUT_FOR_DELIVERY.");
-    } catch (e) {
-        console.log(`✓ Fail Case A correct: Enforced HANDOVER_PENDING verification constraint. Error: "${e.message}"`);
-    }
-
     // Fail case B: Wrong patient trying to confirm
     const wrongPatientId = "60c72b2f9b1d8e23f0000000"; // Random ObjectId
     try {

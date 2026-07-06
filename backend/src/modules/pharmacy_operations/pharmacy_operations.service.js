@@ -126,8 +126,9 @@ export class PharmacyOperationsService extends BaseService {
         if (order.patientId !== patientId) throw new Error("Access denied: You do not own this order");
         if (order.status === 'DELIVERED') throw new Error("Order already delivered");
 
-        // Enforce state machine restriction: status must be HANDOVER_PENDING
-        if (order.status !== 'HANDOVER_PENDING') {
+        // Enforce state machine restriction: status must be one of the in-transit states
+        const allowedStatuses = ["OUT_FOR_DELIVERY", "ARRIVING", "HANDOVER_PENDING"];
+        if (!allowedStatuses.includes(order.status)) {
             throw new Error(`Order cannot be confirmed in its current status: ${order.status}`);
         }
 
@@ -221,8 +222,8 @@ export class PharmacyOperationsService extends BaseService {
         if (transitStatuses.includes(order.status) && order.routePolyline) {
             const routeCoords = JSON.parse(order.routePolyline);
             
-            // Calculate elapsed time in seconds since the order entered OUT_FOR_DELIVERY status (order.updatedAt)
-            const elapsed = (Date.now() - new Date(order.updatedAt).getTime()) / 1000;
+            // Calculate elapsed time in seconds since the order entered OUT_FOR_DELIVERY status (order.updatedAt || order.createdAt)
+            const elapsed = (Date.now() - new Date(order.updatedAt || order.createdAt).getTime()) / 1000;
             const duration = 40; // Reaches target destination in 40 seconds
 
             let nextStatus = order.status;
@@ -280,7 +281,7 @@ export class PharmacyOperationsService extends BaseService {
             : [];
 
         // Estimate remaining time
-        const elapsed = (Date.now() - new Date(order.updatedAt).getTime()) / 1000;
+        const elapsed = (Date.now() - new Date(order.updatedAt || order.createdAt).getTime()) / 1000;
         const remaining = Math.max(0, 40 - elapsed);
         const etaLabel = order.status === 'HANDOVER_PENDING' ? 'Arrived' : order.status === 'DELIVERED' ? 'Delivered' : `${Math.ceil(remaining)} sec`;
 

@@ -230,7 +230,7 @@ model RefillOrder {
   deliveryTime         String
   daysRemaining        Int       @default(5)
   createdAt            DateTime  @default(now())
-  updatedAt            DateTime  @updatedAt
+  updatedAt            DateTime? @updatedAt
 
   medicineId           String?   @db.ObjectId
   trackingId           String?
