@@ -73,8 +73,10 @@ app.get('/', (req, res) => {
 });
 
 const PORT = process.env.PORT || 3000;
-app.listen(PORT, '0.0.0.0', () => {
-    console.log(`Server started on port ${PORT} - Modular Monolith Architecture`);
-});
+if (!process.env.VERCEL) {
+    app.listen(PORT, '0.0.0.0', () => {
+        console.log(`Server started on port ${PORT} - Modular Monolith Architecture`);
+    });
+}
 
 export default app;
