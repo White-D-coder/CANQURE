@@ -13,7 +13,7 @@ export class DocumentsService extends BaseService {
             text = await extractTextFromImage(fileBuffer);
         }
 
-        const medicines = parseMedicines(text);
+        const medicines = await parseMedicines(text);
         return { text, medicines };
     }
 

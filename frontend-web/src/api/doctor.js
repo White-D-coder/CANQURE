@@ -10,6 +10,11 @@ export const getPatientDetails = async (doctorId, patientId) => {
     return response.data;
 };
 
+export const getPatientSnapshot = async (patientId) => {
+    const response = await api.get(`/doctor/patient/${patientId}/snapshot`);
+    return response.data;
+};
+
 export const addPrescription = async (doctorId, patientId, data) => {
     const response = await api.post(`/doctors/${doctorId}/patient/${patientId}/prescription`, data);
     return response.data;

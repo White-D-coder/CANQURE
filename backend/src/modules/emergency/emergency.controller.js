@@ -1,10 +1,12 @@
 import { BaseController } from '../../shared/BaseController.js';
 import { EmergencyService } from './emergency.service.js';
+import { prisma } from '../../db/prisma.js';
 
 export class EmergencyController extends BaseController {
     constructor() {
         super();
         this.emergencyService = new EmergencyService();
+        this.prisma = prisma;
     }
 
     getHospitals = async (req, res) => {

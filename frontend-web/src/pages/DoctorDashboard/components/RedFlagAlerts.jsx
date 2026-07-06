@@ -43,30 +43,30 @@ const RedFlagAlerts = ({ patientId }) => {
             {alerts.map(alert => (
                 <div 
                     key={alert.id} 
-                    className="bg-red-50 border-2 border-red-200 p-5 rounded-3xl flex items-start gap-4 shadow-sm relative overflow-hidden"
+                    className="bg-red-50/50 border border-red-200/80 p-5 rounded-2xl flex items-start gap-4 shadow-sm relative overflow-hidden"
                 >
-                    <div className="absolute top-0 right-0 w-24 h-24 bg-red-100/30 rounded-full translate-x-8 -translate-y-8 flex items-center justify-center pointer-events-none">
-                        <ShieldAlert size={48} className="text-red-200/50" />
+                    <div className="absolute top-0 right-0 w-20 h-20 bg-red-100/10 rounded-full translate-x-8 -translate-y-8 flex items-center justify-center pointer-events-none">
+                        <ShieldAlert size={40} className="text-red-200/30" />
                     </div>
 
-                    <div className="w-12 h-12 bg-red-100 rounded-2xl flex items-center justify-center text-red-600 shrink-0 shadow-inner">
-                        <ShieldAlert size={22} className="animate-pulse" />
+                    <div className="w-10 h-10 bg-red-100/80 border border-red-200 rounded-xl flex items-center justify-center text-red-600 shrink-0">
+                        <ShieldAlert size={18} className="animate-pulse" />
                     </div>
                     
                     <div className="flex-1">
-                        <div className="flex items-center gap-2">
-                            <h4 className="text-base font-black text-red-900 leading-tight">
-                                {alert.title || "Critical Clinical Safety Warning"}
+                        <div className="flex items-center gap-2 flex-wrap">
+                            <h4 className="text-sm font-bold text-red-950 leading-tight">
+                                {alert.title || "Critical Safety Warning"}
                             </h4>
-                            <span className="bg-red-600 text-white text-[8px] font-black uppercase tracking-widest px-2 py-0.5 rounded-full">
+                            <span className="bg-red-650 text-white text-[8px] font-black uppercase tracking-widest px-2 py-0.5 rounded">
                                 {alert.severity || "CRITICAL"}
                             </span>
                         </div>
-                        <p className="text-red-700 text-xs mt-1.5 leading-relaxed font-semibold">
+                        <p className="text-red-800 text-xs mt-1.5 leading-relaxed font-semibold">
                             {alert.message}
                         </p>
                         {alert.actionRecommended && (
-                            <div className="mt-3 flex items-center gap-1.5 text-[10px] font-bold text-red-800 bg-red-100/60 rounded-xl px-3 py-1.5 border border-red-200/40 w-fit">
+                            <div className="mt-2.5 flex items-center gap-1.5 text-[9px] font-bold text-red-900 bg-red-100/50 rounded-lg px-2.5 py-1 border border-red-200/40 w-fit">
                                 <Sparkles size={11} className="text-red-600" /> Action Required: {alert.actionRecommended}
                             </div>
                         )}

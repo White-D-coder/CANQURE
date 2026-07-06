@@ -12,6 +12,7 @@ import { useDoctorStore } from '../../store/useDoctorStore';
 import {
     getDoctorAppointments,
     getPatientDetails,
+    getPatientSnapshot,
     addPrescription,
     updatePrescription,
     getDoctorSlots,
@@ -624,40 +625,138 @@ const ConsultationWorkspace = ({ patient, doctorId, onRefresh }) => {
 };
 
 // ─── Sub-component: Pharmacy Coordination Status ──────────────────────────────
-const PharmacyCoordination = ({ medications }) => (
-    <div className="bg-white rounded-3xl border border-slate-200/80 shadow-[0_1px_4px_rgba(0,0,0,0.03)] overflow-hidden">
-        <div className="p-6 border-b border-slate-100">
-            <h3 className="font-bold text-slate-900 flex items-center gap-2"><Package size={18} className="text-emerald-500" /> Pharmacy Coordination</h3>
-            <p className="text-xs text-slate-400 mt-0.5">Real-time stock availability and delivery ETAs</p>
-        </div>
-        <div className="divide-y divide-slate-100">
-            {medications.map(med => (
-                <div key={med.id} className="p-5">
-                    <div className="flex justify-between items-center mb-3">
-                        <h4 className="font-semibold text-slate-900 text-sm">{med.name}</h4>
-                        <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full border ${med.stock ? 'bg-emerald-50 text-emerald-700 border-emerald-100' : 'bg-red-50 text-red-700 border-red-100'}`}>
-                            {med.stock ? 'In Stock' : 'Out of Stock'}
-                        </span>
-                    </div>
-                    <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
-                        {[
-                            { name: 'Apollo Pharmacy', distance: '2km', eta: '2 hours', stock: true, price: '₹2,000' },
-                            { name: 'MedPlus Chemist', distance: '4km', eta: '3 hours', stock: true, price: '₹1,950' },
-                            { name: 'Fortis Medstore', distance: '7km', eta: '1 day', stock: med.stock, price: '₹2,100' },
-                        ].map((pharm, i) => (
-                            <div key={i} className={`p-3 rounded-xl border text-xs ${pharm.stock ? 'bg-slate-50 border-slate-100' : 'bg-slate-50/30 border-slate-100 opacity-60'}`}>
-                                <p className="font-bold text-slate-800 truncate">{pharm.name}</p>
-                                <p className="text-slate-400 mt-0.5 flex items-center gap-1"><MapPin size={9} /> {pharm.distance}</p>
-                                <p className="text-indigo-600 font-bold mt-1">{pharm.price}</p>
-                                <p className="text-slate-400">ETA: {pharm.eta}</p>
+const drugPricingData = {
+    'pembrolizumab': {
+        apollo: { price: '₹85,000', eta: '4 hours', stock: true },
+        medplus: { price: '₹84,500', eta: '6 hours', stock: true },
+        fortis: { price: '₹86,000', eta: '2 hours', stock: true }
+    },
+    'imatinib': {
+        apollo: { price: '₹2,000', eta: '2 hours', stock: true },
+        medplus: { price: '₹1,950', eta: '3 hours', stock: true },
+        fortis: { price: '₹2,100', eta: '1 day', stock: false }
+    },
+    'tamoxifen': {
+        apollo: { price: '₹350', eta: '1 hour', stock: true },
+        medplus: { price: '₹340', eta: '2 hours', stock: true },
+        fortis: { price: '₹360', eta: '4 hours', stock: true }
+    },
+    'ondansetron': {
+        apollo: { price: '₹150', eta: '30 mins', stock: true },
+        medplus: { price: '₹140', eta: '1 hour', stock: true },
+        fortis: { price: '₹160', eta: '2 hours', stock: true }
+    },
+    'prednisolone': {
+        apollo: { price: '₹80', eta: '30 mins', stock: true },
+        medplus: { price: '₹75', eta: '1 hour', stock: true },
+        fortis: { price: '₹85', eta: '1 hour', stock: true }
+    },
+    'doxorubicin': {
+        apollo: { price: '₹4,500', eta: '1 day', stock: true },
+        medplus: { price: '₹4,400', eta: '1 day', stock: true },
+        fortis: { price: '₹4,600', eta: '3 hours', stock: true }
+    },
+    'capecitabine': {
+        apollo: { price: '₹3,200', eta: '2 hours', stock: true },
+        medplus: { price: '₹3,150', eta: '3 hours', stock: true },
+        fortis: { price: '₹3,300', eta: '5 hours', stock: true }
+    },
+    'oxaliplatin': {
+        apollo: { price: '₹6,000', eta: '1 day', stock: true },
+        medplus: { price: '₹5,900', eta: '1 day', stock: true },
+        fortis: { price: '₹6,100', eta: '4 hours', stock: true }
+    }
+};
+
+const PharmacyCoordination = ({ medications }) => {
+    const getPharmacyInfo = (medName) => {
+        const key = medName?.toLowerCase()?.split(' ')[0] || '';
+        
+        // Lookup defined pricing
+        if (drugPricingData[key]) {
+            const data = drugPricingData[key];
+            return [
+                { name: 'Apollo Pharmacy', distance: '2km', ...data.apollo },
+                { name: 'MedPlus Chemist', distance: '4km', ...data.medplus },
+                { name: 'Fortis Medstore', distance: '7km', ...data.fortis }
+            ];
+        }
+
+        // Deterministic generation fallback for dynamic drugs
+        const hash = medName ? medName.split('').reduce((acc, char) => acc + char.charCodeAt(0), 0) : 100;
+        const generatedPrice = 200 + (hash % 15) * 150;
+        const formattedPrice = `₹${generatedPrice.toLocaleString('en-IN')}`;
+        
+        return [
+            { name: 'Apollo Pharmacy', distance: '2km', price: formattedPrice, eta: `${(hash % 3) + 1} hours`, stock: true },
+            { name: 'MedPlus Chemist', distance: '4km', price: `₹${(generatedPrice - 50).toLocaleString('en-IN')}`, eta: `${(hash % 4) + 2} hours`, stock: true },
+            { name: 'Fortis Medstore', distance: '7km', price: `₹${(generatedPrice + 100).toLocaleString('en-IN')}`, eta: hash % 2 === 0 ? '1 day' : '3 hours', stock: hash % 3 !== 0 }
+        ];
+    };
+
+    return (
+        <div className="bg-white rounded-2xl border border-slate-200/80 shadow-[0_1px_3px_rgba(0,0,0,0.01)] overflow-hidden">
+            <div className="p-6 border-b border-slate-100 bg-slate-50/40">
+                <h3 className="font-bold text-slate-900 text-sm flex items-center gap-2">
+                    <MapPin size={16} className="text-emerald-600" /> Real-time Pharmacy Stock & Delivery
+                </h3>
+                <p className="text-xs text-slate-400 mt-0.5 font-medium">Verified local inventory and negotiated pricing packages</p>
+            </div>
+            <div className="divide-y divide-slate-100">
+                {medications.map(med => {
+                    const currentName = med.medName || med.name;
+                    const pharmList = getPharmacyInfo(currentName);
+                    // Determine if in stock at at least one local partner
+                    const isAnyInStock = pharmList.some(p => p.stock);
+
+                    return (
+                        <div key={med.id} className="p-5">
+                            <div className="flex justify-between items-center mb-3">
+                                <h4 className="font-bold text-slate-800 text-sm">{currentName}</h4>
+                                <span className={`text-[9px] font-black uppercase tracking-wider px-2 py-0.5 rounded border ${
+                                    isAnyInStock ? 'bg-emerald-50 text-emerald-700 border-emerald-100/60' : 'bg-red-50 text-red-700 border-red-100/60'
+                                }`}>
+                                    {isAnyInStock ? 'In Stock Locally' : 'Out of Stock'}
+                                </span>
                             </div>
-                        ))}
-                    </div>
-                </div>
-            ))}
+                            <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+                                {pharmList.map((pharm, i) => (
+                                    <div key={i} className={`p-3 rounded-xl border text-xs transition-all ${
+                                        pharm.stock 
+                                            ? 'bg-slate-50/50 border-slate-150/60 hover:border-indigo-150' 
+                                            : 'bg-slate-50/10 border-slate-100 opacity-50'
+                                    }`}>
+                                        <div className="flex justify-between items-center mb-1">
+                                            <p className="font-bold text-slate-800 truncate">{pharm.name}</p>
+                                            {!pharm.stock && <span className="text-[8px] font-bold text-red-650 bg-red-50 border border-red-100 px-1 rounded">No Stock</span>}
+                                        </div>
+                                        <p className="text-slate-400 mt-0.5 flex items-center gap-1 font-semibold text-[10px]"><MapPin size={9} /> {pharm.distance}</p>
+                                        <p className="text-indigo-650 font-bold mt-2 text-sm">{pharm.price}</p>
+                                        <p className="text-slate-500 font-medium mt-0.5">Delivery: {pharm.eta}</p>
+                                    </div>
+                                ))}
+                            </div>
+                        </div>
+                    );
+                })}
+            </div>
         </div>
-    </div>
-);
+    );
+};
+
+const getAIBriefingFindings = (cancerName) => {
+    const name = cancerName?.toLowerCase() || '';
+    if (name.includes('lung')) {
+        return "PET scan: 3cm mass in right lower lobe. CEA elevated (8.2). Prior biopsy recommended. LDH trending high over 3 months.";
+    }
+    if (name.includes('breast')) {
+        return "Mammogram: 2.2cm mass in upper outer quadrant of left breast. HER2 positive status confirmed via IHC. Tamoxifen protocol established.";
+    }
+    if (name.includes('colon')) {
+        return "Colonoscopy: Obstructing lesion in ascending colon. CEA elevated (6.4). CT scan shows localized wall thickening. Biopsy shows adenocarcinoma.";
+    }
+    return "Patient is currently on active maintenance therapy cycle. No immediate diagnostic escalations required. Review ongoing treatment tolerance.";
+};
 
 // ─── Main Doctor Dashboard Component ─────────────────────────────────────────
 const DoctorDashboard = () => {
@@ -709,7 +808,7 @@ const DoctorDashboard = () => {
         setPatientLoading(true);
         try {
             const data = await getPatientDetails(user.id, patientId);
-            const meta = getMockPatientMeta(patientId);
+            const meta = await getPatientSnapshot(patientId);
             const meds = getMockMedications(patientId);
             const gaps = getMockCareGaps(patientId);
             const timeline = getMockTimeline();
@@ -745,9 +844,10 @@ const DoctorDashboard = () => {
         navigate('/login');
     };
 
-    const filteredAppointments = appointments.filter(apt =>
-        apt.user?.name?.toLowerCase().includes(searchQuery.toLowerCase())
-    );
+    const filteredAppointments = appointments.filter(apt => {
+        const name = apt.patientName || apt.user?.name || '';
+        return name.toLowerCase().includes(searchQuery.toLowerCase());
+    });
 
     const emergencyCount = appointments.filter((_, i) => i === 0).length; // mock: first patient as emergency
     const lowMedCount = 3; // mock
@@ -771,17 +871,17 @@ const DoctorDashboard = () => {
             {/* ── Sidebar ── */}
             <motion.aside
                 animate={{ width: 272 }}
-                className="fixed inset-y-0 left-0 bg-slate-900 border-r border-slate-800 z-50 flex flex-col h-screen overflow-hidden"
+                className="fixed inset-y-0 left-0 bg-white border-r border-slate-200/80 z-50 flex flex-col h-screen overflow-hidden"
                 style={{ width: 272 }}
             >
                 {/* Logo */}
-                <div className="p-6 border-b border-slate-800 flex items-center gap-3 h-20 shrink-0">
-                    <div className="w-9 h-9 rounded-xl bg-gradient-to-br from-indigo-500 to-indigo-700 flex items-center justify-center shadow-lg shadow-indigo-900/40 shrink-0">
+                <div className="p-6 border-b border-slate-100 flex items-center gap-3 h-20 shrink-0">
+                    <div className="w-9 h-9 rounded-xl bg-gradient-to-br from-indigo-500 to-indigo-700 flex items-center justify-center shadow-md shrink-0">
                         <span className="text-white font-black text-base">C</span>
                     </div>
                     <div>
-                        <p className="text-white font-bold text-base tracking-tight leading-none">CanQure</p>
-                        <p className="text-indigo-400 text-[10px] font-semibold mt-0.5">Doctor Portal</p>
+                        <p className="text-slate-900 font-bold text-base tracking-tight leading-none">CanQure</p>
+                        <p className="text-indigo-600 text-[10px] font-semibold mt-0.5">Doctor Portal</p>
                     </div>
                 </div>
 
@@ -802,10 +902,10 @@ const DoctorDashboard = () => {
                                 onClick={() => { setActiveTab(item.id); closePatientView(); }}
                                 whileHover={{ x: 2 }}
                                 whileTap={{ scale: 0.98 }}
-                                className={`w-full flex items-center gap-3 px-4 py-2.5 h-11 rounded-xl font-medium text-sm relative overflow-hidden transition-all duration-150 focus:outline-none ${isActive ? 'text-white' : 'text-slate-400 hover:text-slate-200 hover:bg-slate-800'}`}
+                                className={`w-full flex items-center gap-3 px-4 py-2.5 h-11 rounded-xl font-semibold text-sm relative overflow-hidden transition-all duration-150 focus:outline-none ${isActive ? 'text-indigo-600' : 'text-slate-500 hover:text-slate-900 hover:bg-slate-50'}`}
                             >
                                 {isActive && (
-                                    <motion.div layoutId="sidebarActive" className="absolute inset-0 bg-indigo-600 rounded-xl"
+                                    <motion.div layoutId="sidebarActive" className="absolute inset-0 bg-indigo-50 border border-indigo-100 rounded-xl"
                                         transition={{ type: 'spring', stiffness: 400, damping: 32 }} />
                                 )}
                                 <item.icon size={18} className="relative z-10 shrink-0" />
@@ -816,17 +916,17 @@ const DoctorDashboard = () => {
                 </nav>
 
                 {/* Doctor Profile */}
-                <div className="p-4 border-t border-slate-800 shrink-0">
-                    <div className="flex items-center gap-3 p-3 rounded-xl bg-slate-800/60 mb-3">
+                <div className="p-4 border-t border-slate-100 shrink-0">
+                    <div className="flex items-center gap-3 p-3 rounded-xl bg-slate-50 mb-3 border border-slate-100">
                         <div className="w-9 h-9 rounded-xl bg-indigo-600 flex items-center justify-center text-white font-bold text-sm shrink-0">
                             {user?.name?.charAt(0) || 'D'}
                         </div>
                         <div className="flex-1 min-w-0">
-                            <p className="text-white text-xs font-bold truncate">{formatDoctorName(user?.name)}</p>
-                            <p className="text-slate-400 text-[10px] truncate">{user?.specialist || 'Oncologist'}</p>
+                            <p className="text-slate-800 text-xs font-bold truncate">{formatDoctorName(user?.name)}</p>
+                            <p className="text-slate-500 text-[10px] truncate">{user?.specialist || 'Oncologist'}</p>
                         </div>
                     </div>
-                    <button onClick={handleLogout} className="w-full flex items-center gap-3 px-4 py-2.5 rounded-xl text-slate-400 hover:text-red-400 hover:bg-red-950/30 transition-all text-sm font-medium">
+                    <button onClick={handleLogout} className="w-full flex items-center gap-3 px-4 py-2.5 rounded-xl text-slate-500 hover:text-red-600 hover:bg-red-50 transition-all text-sm font-semibold">
                         <LogOut size={16} /> Logout
                     </button>
                 </div>
@@ -840,99 +940,211 @@ const DoctorDashboard = () => {
                     {selectedPatient ? (
                         <motion.div key="workspace" initial={{ opacity: 0, x: 30 }} animate={{ opacity: 1, x: 0 }} exit={{ opacity: 0, x: -20 }}>
 
-                            {/* Patient Header */}
-                            <div className="sticky top-0 z-30 bg-white border-b border-slate-200/80 shadow-[0_1px_4px_rgba(0,0,0,0.04)]">
-                                <div className="px-8 py-4 flex items-center justify-between gap-4">
-                                    <div className="flex items-center gap-4">
-                                        <button onClick={closePatientView} className="flex items-center gap-2 text-slate-500 hover:text-slate-900 font-semibold text-sm transition-colors">
-                                            <ChevronLeft size={18} /> Back to Queue
+                            {/* Sticky Patient Header */}
+                            <div className="sticky top-0 z-30 bg-white border-b border-slate-200/80 shadow-[0_1px_3px_rgba(0,0,0,0.02)] px-8 py-5">
+                                <div className="flex flex-col xl:flex-row xl:items-center justify-between gap-6">
+                                    <div>
+                                        {/* Back to Queue Link */}
+                                        <button onClick={closePatientView} className="inline-flex items-center gap-1.5 text-slate-500 hover:text-slate-900 font-bold text-xs uppercase tracking-wider mb-2.5 transition-colors">
+                                            <ChevronLeft size={14} /> Back to Queue
                                         </button>
-                                        <div className="w-px h-6 bg-slate-200" />
-                                        <div className="flex items-center gap-3">
-                                            <div className="w-10 h-10 rounded-2xl bg-indigo-100 text-indigo-700 flex items-center justify-center font-bold text-base">
+                                        <div className="flex items-center gap-4">
+                                            <div className="w-11 h-11 rounded-2xl bg-indigo-50 border border-indigo-100 text-indigo-600 flex items-center justify-center font-black text-xl shadow-sm shrink-0">
                                                 {selectedPatient.name?.charAt(0)}
                                             </div>
                                             <div>
-                                                <p className="font-bold text-slate-900 text-sm leading-none">{selectedPatient.name}</p>
+                                                <div className="flex items-center gap-2.5">
+                                                    <h2 className="text-xl font-black text-slate-900 leading-tight">{selectedPatient.name}</h2>
+                                                    {patientMeta?.priority === 'EMERGENCY' && (
+                                                        <span className="px-2 py-0.5 bg-red-50 text-red-600 text-[9px] font-black rounded-full border border-red-100 uppercase tracking-widest animate-pulse">Emergency</span>
+                                                    )}
+                                                </div>
                                                 {patientMeta && (
-                                                    <p className="text-[11px] text-slate-400 mt-0.5">{patientMeta.age}y · {patientMeta.gender} · {patientMeta.cancerType}</p>
+                                                    <p className="text-xs text-slate-500 font-semibold mt-1 flex items-center gap-2">
+                                                        <span>{patientMeta.age}y</span>
+                                                        <span className="text-slate-300">•</span>
+                                                        <span>{patientMeta.gender}</span>
+                                                        <span className="text-slate-300">•</span>
+                                                        <span>Blood {patientMeta.bloodType}</span>
+                                                        <span className="text-slate-300">•</span>
+                                                        <span className="text-indigo-600">{patientMeta.cancerType} · Stage {patientMeta.stage}</span>
+                                                    </p>
                                                 )}
                                             </div>
                                         </div>
                                     </div>
-                                    <div className="flex items-center gap-2">
-                                        {patientMeta?.priority === 'EMERGENCY' && (
-                                            <span className="px-3 py-1.5 bg-red-100 text-red-700 text-[10px] font-black rounded-full border border-red-200 uppercase tracking-wider animate-pulse">Emergency</span>
+
+                                    {/* Patient Header Stats Grid */}
+                                    <div className="flex flex-wrap items-center gap-3">
+                                        {patientMeta && (
+                                            <>
+                                                <div className="px-3 py-1.5 bg-slate-50 border border-slate-100 rounded-xl">
+                                                    <p className="text-[9px] font-black text-slate-400 uppercase tracking-widest leading-none">ECOG Status</p>
+                                                    <p className="text-xs font-bold text-slate-700 mt-1">ECOG {patientMeta.ecog !== undefined ? patientMeta.ecog : 0}</p>
+                                                </div>
+                                                <div className="px-3 py-1.5 bg-slate-50 border border-slate-100 rounded-xl">
+                                                    <p className="text-[9px] font-black text-slate-400 uppercase tracking-widest leading-none">Allergies</p>
+                                                    <p className="text-xs font-bold text-rose-600 mt-1">{patientMeta.allergies}</p>
+                                                </div>
+                                                <div className="px-3 py-1.5 bg-slate-50 border border-slate-100 rounded-xl">
+                                                    <p className="text-[9px] font-black text-slate-400 uppercase tracking-widest leading-none">Caregiver</p>
+                                                    <p className="text-xs font-bold text-slate-700 mt-1 truncate max-w-[120px]">{patientMeta.caregiver}</p>
+                                                </div>
+                                            </>
                                         )}
-                                        <button
-                                            onClick={async () => {
-                                                const details = await getPatientDetails(user.id, selectedPatient.id);
-                                                setShowBriefing({ ...details, ...selectedPatient });
-                                            }}
-                                            className="px-4 py-2 bg-indigo-50 text-indigo-600 text-xs font-bold rounded-xl hover:bg-indigo-100 transition-all border border-indigo-100 flex items-center gap-1.5">
-                                            <FileText size={13} /> Pre-Read Brief
-                                        </button>
-                                        <button
-                                            onClick={() => setActiveCall({ ...selectedPatient, id: selectedPatient.id })}
-                                            className="px-4 py-2 bg-slate-900 text-white text-xs font-bold rounded-xl hover:bg-slate-800 transition-all flex items-center gap-1.5">
-                                            <Video size={13} /> Start Video Consult
-                                        </button>
+                                        
+                                        <div className="flex gap-2">
+                                            <button
+                                                onClick={async () => {
+                                                    const details = await getPatientDetails(user.id, selectedPatient.id);
+                                                    setShowBriefing({ ...details, ...selectedPatient });
+                                                }}
+                                                className="px-4 py-2 bg-indigo-50 text-indigo-600 text-xs font-bold rounded-xl hover:bg-indigo-100 transition-all border border-indigo-100 flex items-center gap-1.5"
+                                            >
+                                                <Brain size={13} className="text-indigo-500" /> AI Pre-Read
+                                            </button>
+                                            <button
+                                                onClick={() => setActiveCall({ ...selectedPatient, id: selectedPatient.id })}
+                                                className="px-4 py-2 bg-slate-900 text-white text-xs font-bold rounded-xl hover:bg-slate-800 transition-all flex items-center gap-1.5"
+                                            >
+                                                <Video size={13} /> Start Consult
+                                            </button>
+                                        </div>
                                     </div>
                                 </div>
 
-                                {/* Workspace Section Tabs */}
-                                <div className="px-8 flex gap-1 overflow-x-auto scrollbar-none pb-0">
+                                {/* Sticky Workspace Selector */}
+                                <div className="flex gap-1 overflow-x-auto scrollbar-none mt-5 border-t border-slate-100 pt-3.5 -mb-5">
                                     {workspaceSections.map(sec => (
-                                        <button key={sec.id} onClick={() => setActiveWorkspaceSection(sec.id)}
-                                            className={`px-4 py-2.5 text-xs font-semibold whitespace-nowrap border-b-2 transition-all -mb-px ${activeWorkspaceSection === sec.id ? 'border-indigo-600 text-indigo-600' : 'border-transparent text-slate-500 hover:text-slate-900'}`}>
+                                        <button 
+                                            key={sec.id} 
+                                            onClick={() => setActiveWorkspaceSection(sec.id)}
+                                            className={`px-4 py-2 text-xs font-semibold whitespace-nowrap border-b-2 transition-all -mb-px ${
+                                                activeWorkspaceSection === sec.id 
+                                                    ? 'border-indigo-600 text-indigo-600' 
+                                                    : 'border-transparent text-slate-500 hover:text-slate-900'
+                                            }`}
+                                        >
                                             {sec.label}
                                         </button>
                                     ))}
                                 </div>
                             </div>
 
-                            <div className="p-8">
-                                {/* Overview Section */}
-                                {activeWorkspaceSection === 'overview' && (
-                                    <div className="space-y-8">
-                                        <RedFlagAlerts patientId={selectedPatient.id} />
-                                        <PatientSnapshot patientId={selectedPatient.id} patientName={selectedPatient.name} />
-                                        <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
-                                            <CareGaps patientId={selectedPatient.id} />
-                                            <DocumentVault patientId={selectedPatient.id} />
+                            <div className="flex flex-col xl:flex-row gap-8 p-8 items-start">
+                                {/* Center Main Workspace Content */}
+                                <div className="flex-1 space-y-8 min-w-0 w-full">
+                                    {/* Overview Section */}
+                                    {activeWorkspaceSection === 'overview' && (
+                                        <div className="space-y-8">
+                                            <RedFlagAlerts patientId={selectedPatient.id} />
+                                            <PatientSnapshot patientId={selectedPatient.id} patientName={selectedPatient.name} />
+                                            <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
+                                                <CareGaps patientId={selectedPatient.id} />
+                                                <DocumentVault patientId={selectedPatient.id} />
+                                            </div>
+                                        </div>
+                                    )}
+
+                                    {/* Timeline Section */}
+                                    {activeWorkspaceSection === 'timeline' && (
+                                        <MedicalTimeline patientId={selectedPatient.id} />
+                                    )}
+
+                                    {/* Medications Section */}
+                                    {activeWorkspaceSection === 'medications' && (
+                                        <MedicationTable patientId={selectedPatient.id} />
+                                    )}
+
+                                    {/* Pharmacy Section */}
+                                    {activeWorkspaceSection === 'pharmacy' && patientMedications.length > 0 && (
+                                        <PharmacyCoordination medications={patientMedications} />
+                                    )}
+
+                                    {/* Consultation Section */}
+                                    {activeWorkspaceSection === 'consultation' && (
+                                        <PrescriptionWriter 
+                                            patientId={selectedPatient.id} 
+                                            patientName={selectedPatient.name} 
+                                            doctorId={user.id} 
+                                            doctorName={user.name} 
+                                        />
+                                    )}
+
+                                    {/* Emergency Section */}
+                                    {activeWorkspaceSection === 'emergency' && (
+                                        <QREmergencyCard patientId={selectedPatient.id} patientName={selectedPatient.name} />
+                                    )}
+                                </div>
+
+                                {/* Right Context Panel */}
+                                <aside className="w-full xl:w-[320px] shrink-0 space-y-6">
+                                    {/* Clinical Alerts card */}
+                                    <div className="bg-white border border-slate-200/80 rounded-2xl p-5 shadow-[0_1px_3px_rgba(0,0,0,0.02)]">
+                                        <h4 className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-3.5 flex items-center gap-1.5">
+                                            <ShieldAlert size={14} className="text-red-500" /> Clinical Alerts
+                                        </h4>
+                                        <div className="space-y-2.5">
+                                            <div className="p-3 bg-red-50/60 border border-red-100 rounded-xl">
+                                                <p className="text-xs font-bold text-red-800">ANC 1.2 x 10⁹/L (Low)</p>
+                                                <p className="text-[10px] text-red-500 mt-0.5 font-medium leading-relaxed">Mild neutropenia detected in latest CBC.</p>
+                                            </div>
+                                            <div className="p-3 bg-amber-50/60 border border-amber-100 rounded-xl">
+                                                <p className="text-xs font-bold text-amber-800">Fatigue Reported</p>
+                                                <p className="text-[10px] text-amber-500 mt-0.5 font-medium leading-relaxed">Patient logged grade 2 fatigue via portal.</p>
+                                            </div>
                                         </div>
                                     </div>
-                                )}
 
-                                {/* Timeline Section */}
-                                {activeWorkspaceSection === 'timeline' && (
-                                    <MedicalTimeline patientId={selectedPatient.id} />
-                                )}
+                                    {/* Tasks Checklist card */}
+                                    <div className="bg-white border border-slate-200/80 rounded-2xl p-5 shadow-[0_1px_3px_rgba(0,0,0,0.02)]">
+                                        <h4 className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-3.5">Tasks Checklist</h4>
+                                        <div className="space-y-2.5">
+                                            {[
+                                                'Review Pathology Report',
+                                                'Discuss Genomic Testing',
+                                                'Schedule Cycle 4 Chemo'
+                                            ].map((task, idx) => (
+                                                <label key={idx} className="flex items-center gap-2.5 text-xs text-slate-600 font-semibold cursor-pointer py-0.5">
+                                                    <input type="checkbox" className="w-4 h-4 rounded border-slate-200 text-indigo-600 focus:ring-indigo-300" />
+                                                    <span>{task}</span>
+                                                </label>
+                                            ))}
+                                        </div>
+                                    </div>
 
-                                {/* Medications Section */}
-                                {activeWorkspaceSection === 'medications' && (
-                                    <MedicationTable patientId={selectedPatient.id} />
-                                )}
+                                    {/* Medication Warnings card */}
+                                    <div className="bg-white border border-slate-200/80 rounded-2xl p-5 shadow-[0_1px_3px_rgba(0,0,0,0.02)]">
+                                        <h4 className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-3.5 flex items-center gap-1.5">
+                                            <AlertCircle size={14} className="text-amber-500" /> Medication Warnings
+                                        </h4>
+                                        <div className="space-y-2 text-xs font-medium text-slate-600">
+                                            <div className="p-3 bg-amber-50/30 border border-amber-100/60 rounded-xl space-y-1">
+                                                <p className="font-bold text-slate-850">Drug Interaction</p>
+                                                <p className="text-[10px] text-slate-500 leading-relaxed font-medium">Moderate risk detected between active chemotherapeutics and antiemetic agents.</p>
+                                            </div>
+                                        </div>
+                                    </div>
 
-                                {/* Pharmacy Section */}
-                                {activeWorkspaceSection === 'pharmacy' && patientMedications.length > 0 && (
-                                    <PharmacyCoordination medications={patientMedications} />
-                                )}
-
-                                {/* Consultation Section */}
-                                {activeWorkspaceSection === 'consultation' && (
-                                    <PrescriptionWriter 
-                                        patientId={selectedPatient.id} 
-                                        patientName={selectedPatient.name} 
-                                        doctorId={user.id} 
-                                        doctorName={user.name} 
-                                    />
-                                )}
-
-                                {/* Emergency Section */}
-                                {activeWorkspaceSection === 'emergency' && (
-                                    <QREmergencyCard patientId={selectedPatient.id} patientName={selectedPatient.name} />
-                                )}
+                                    {/* Quick Actions card */}
+                                    <div className="bg-white border border-slate-200/80 rounded-2xl p-5 shadow-[0_1px_3px_rgba(0,0,0,0.02)]">
+                                        <h4 className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-3.5">Quick Actions</h4>
+                                        <div className="grid grid-cols-2 gap-2 text-center text-xs font-bold">
+                                            <button className="p-2.5 bg-slate-50 hover:bg-slate-100 border border-slate-100 rounded-xl text-slate-700 transition-colors">
+                                                Order Lab
+                                            </button>
+                                            <button className="p-2.5 bg-slate-50 hover:bg-slate-100 border border-slate-100 rounded-xl text-slate-700 transition-colors">
+                                                Order Imaging
+                                            </button>
+                                            <button className="p-2.5 bg-slate-50 hover:bg-slate-100 border border-slate-100 rounded-xl text-slate-700 transition-colors">
+                                                Request Biopsy
+                                            </button>
+                                            <button className="p-2.5 bg-slate-50 hover:bg-slate-100 border border-slate-100 rounded-xl text-slate-700 transition-colors">
+                                                Schedule Scan
+                                            </button>
+                                        </div>
+                                    </div>
+                                </aside>
                             </div>
                         </motion.div>
                     ) : (
@@ -981,96 +1193,146 @@ const DoctorDashboard = () => {
                                     {activeTab === 'command' && (
                                         <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-4">
                                             {[
-                                                { label: 'Scheduled Today', value: appointments.length, color: 'indigo', icon: Calendar },
-                                                { label: 'Emergency Alerts', value: emergencyCount, color: 'red', icon: ShieldAlert },
-                                                { label: 'Pending Reviews', value: 3, color: 'amber', icon: ClipboardList },
-                                                { label: 'Med Gaps', value: lowMedCount, color: 'rose', icon: Pill },
-                                                { label: 'Teleconsult Requests', value: 2, color: 'emerald', icon: Video },
+                                                { label: 'Scheduled Today', value: appointments.length, icon: Calendar, bg: 'bg-indigo-50 border-indigo-100', text: 'text-indigo-600' },
+                                                { label: 'Emergency Alerts', value: emergencyCount, icon: ShieldAlert, bg: 'bg-red-50 border-red-100', text: 'text-red-650' },
+                                                { label: 'Pending Reviews', value: 3, icon: ClipboardList, bg: 'bg-amber-50 border-amber-100', text: 'text-amber-600' },
+                                                { label: 'Med Gaps', value: lowMedCount, icon: Pill, bg: 'bg-rose-50 border-rose-100', text: 'text-rose-600' },
+                                                { label: 'Teleconsult Requests', value: 2, icon: Video, bg: 'bg-emerald-50 border-emerald-100', text: 'text-emerald-650' },
                                             ].map((stat, i) => (
                                                 <motion.div key={i} whileHover={{ y: -3 }}
-                                                    className={`bg-white p-5 rounded-3xl border border-slate-100 shadow-sm flex flex-col justify-between h-[120px] cursor-default`}>
+                                                    className="bg-white p-5 rounded-2xl border border-slate-200/85 shadow-[0_1px_3px_rgba(0,0,0,0.01)] flex flex-col justify-between h-[120px] cursor-default">
                                                     <div className="flex justify-between items-start">
-                                                        <span className="text-[10px] font-black text-slate-400 uppercase tracking-widest leading-tight">{stat.label}</span>
-                                                        <div className={`w-9 h-9 rounded-2xl flex items-center justify-center bg-${stat.color}-50 text-${stat.color}-600`}>
+                                                        <span className="text-[9px] font-black text-slate-400 uppercase tracking-widest leading-tight">{stat.label}</span>
+                                                        <div className={`w-9 h-9 rounded-xl flex items-center justify-center ${stat.bg} ${stat.text}`}>
                                                             <stat.icon size={16} />
                                                         </div>
                                                     </div>
-                                                    <p className={`text-4xl font-black text-${stat.color}-600`}>{stat.value}</p>
+                                                    <p className={`text-4xl font-black ${stat.text}`}>{stat.value}</p>
                                                 </motion.div>
                                             ))}
                                         </div>
                                     )}
 
                                     {/* Priority Queue */}
-                                    <div className="bg-white rounded-3xl border border-slate-200/80 shadow-[0_1px_4px_rgba(0,0,0,0.03)] overflow-hidden">
-                                        <div className="p-6 border-b border-slate-100 flex justify-between items-center">
+                                    <div className="bg-white rounded-2xl border border-slate-200/80 shadow-[0_1px_3px_rgba(0,0,0,0.01)] overflow-hidden">
+                                        <div className="p-6 border-b border-slate-100 flex justify-between items-center bg-slate-50/40">
                                             <div>
-                                                <h3 className="font-bold text-slate-900">Patient Queue</h3>
-                                                <p className="text-xs text-slate-400 mt-0.5">Sorted by priority: Emergencies first</p>
+                                                <h3 className="font-bold text-slate-900 text-base tracking-tight">Patient Consultation Queue</h3>
+                                                <p className="text-xs text-slate-400 mt-0.5 font-medium">Prioritized clinically with auto-detected risk gaps</p>
                                             </div>
                                             <div className="flex gap-2">
-                                                {['All', 'Emergency', 'Scheduled', 'Follow-up'].map(f => (
-                                                    <button key={f} className="px-3 py-1.5 rounded-xl text-xs font-semibold border border-slate-200 text-slate-500 hover:border-slate-400 hover:text-slate-900 transition-all bg-white">{f}</button>
+                                                {['All', 'Emergency', 'Scheduled', 'Follow-up'].map((f, i) => (
+                                                    <button 
+                                                        key={f} 
+                                                        className={`px-3 py-1.5 rounded-lg text-xs font-bold border transition-all ${
+                                                            i === 0 
+                                                                ? 'bg-slate-900 border-slate-900 text-white' 
+                                                                : 'bg-white border-slate-200 text-slate-500 hover:border-slate-350 hover:text-slate-800'
+                                                        }`}
+                                                    >
+                                                        {f}
+                                                    </button>
                                                 ))}
                                             </div>
                                         </div>
 
+                                        {/* Table Header */}
+                                        <div className="hidden md:grid grid-cols-12 gap-4 px-6 py-3 bg-slate-50/60 border-b border-slate-100 text-[10px] font-black text-slate-400 uppercase tracking-widest leading-none">
+                                            <div className="col-span-5">Patient Details</div>
+                                            <div className="col-span-3">Appointment & Time</div>
+                                            <div className="col-span-2">Clinical Status</div>
+                                            <div className="col-span-2 text-right">Actions</div>
+                                        </div>
+
                                         {filteredAppointments.length === 0 ? (
-                                            <div className="p-12 text-center text-slate-400">
-                                                <Users size={40} className="mx-auto mb-3 text-slate-200" />
-                                                <p className="text-sm font-medium">No patients in queue</p>
+                                            <div className="p-16 text-center">
+                                                <Users size={32} className="mx-auto mb-3 text-slate-300" />
+                                                <p className="text-sm font-semibold text-slate-800">No active patients in queue</p>
+                                                <p className="text-xs text-slate-400 mt-1 max-w-sm mx-auto">Appointments assigned to you will appear here automatically.</p>
                                             </div>
                                         ) : (
-                                            <div className="divide-y divide-slate-50">
+                                            <div className="divide-y divide-slate-100">
                                                 {filteredAppointments.map((apt, idx) => {
                                                     const meta = getMockPatientMeta(apt.userId);
                                                     const meds = getMockMedications(apt.userId);
                                                     const lowMed = meds.some(m => m.daysLeft <= 7);
                                                     const gaps = getMockCareGaps(apt.userId);
                                                     const isEmergency = idx === 0; // mock first as emergency
+                                                    
+                                                    const statusStyles = {
+                                                        ACCEPTED: 'bg-emerald-50 text-emerald-700 border-emerald-100/60',
+                                                        PENDING: 'bg-amber-50 text-amber-700 border-amber-100/60',
+                                                        SCHEDULED: 'bg-blue-50 text-blue-700 border-blue-100/60'
+                                                    };
+
                                                     return (
-                                                        <motion.div key={apt.id} whileHover={{ backgroundColor: '#f8fafc' }}
-                                                            className={`p-5 flex items-center gap-4 transition-colors ${isEmergency ? 'border-l-4 border-l-red-500' : 'border-l-4 border-l-transparent'}`}>
-                                                            {/* Avatar */}
-                                                            <div className={`w-11 h-11 rounded-2xl flex items-center justify-center font-bold text-base shrink-0 ${isEmergency ? 'bg-red-100 text-red-700' : 'bg-indigo-100 text-indigo-700'}`}>
-                                                                {apt.user?.name?.charAt(0)}
-                                                            </div>
-
-                                                            {/* Info */}
-                                                            <div className="flex-1 min-w-0">
-                                                                <div className="flex items-center gap-2 flex-wrap">
-                                                                    <p className="font-bold text-slate-900 text-sm">{apt.user?.name}</p>
-                                                                    {isEmergency && <span className="px-2 py-0.5 bg-red-100 text-red-700 text-[9px] font-black rounded-full uppercase border border-red-200">Emergency</span>}
-                                                                    {lowMed && <span className="px-2 py-0.5 bg-amber-50 text-amber-700 text-[9px] font-bold rounded-full border border-amber-100">Med Low</span>}
-                                                                    {gaps.some(g => g.priority === 'CRITICAL') && <span className="px-2 py-0.5 bg-rose-50 text-rose-700 text-[9px] font-bold rounded-full border border-rose-100">Gap Alert</span>}
+                                                        <motion.div 
+                                                            key={apt.id} 
+                                                            whileHover={{ backgroundColor: '#fdfdfd' }}
+                                                            className={`px-6 py-4.5 flex flex-col md:grid md:grid-cols-12 gap-4 items-start md:items-center transition-colors ${
+                                                                isEmergency ? 'bg-red-50/20 border-l-[3px] border-l-red-500' : 'border-l-[3px] border-l-transparent'
+                                                            }`}
+                                                        >
+                                                            {/* Patient Column */}
+                                                            <div className="col-span-5 flex items-center gap-3.5 w-full">
+                                                                <div className={`w-10 h-10 rounded-xl flex items-center justify-center font-black text-sm shrink-0 border ${
+                                                                    isEmergency 
+                                                                        ? 'bg-red-50 border-red-100 text-red-650' 
+                                                                        : 'bg-indigo-50 border-indigo-100 text-indigo-600'
+                                                                }`}>
+                                                                    {(apt.patientName || apt.user?.name || 'P').charAt(0)}
                                                                 </div>
-                                                                <p className="text-[11px] text-slate-400 mt-0.5">{meta.cancerType} · Age {meta.age}</p>
-                                                                <p className="text-[10px] text-slate-400 mt-0.5">Consult: {apt.time} · {new Date(apt.date).toLocaleDateString()}</p>
+                                                                <div className="min-w-0">
+                                                                    <div className="flex items-center gap-2 flex-wrap">
+                                                                        <p className="font-bold text-slate-900 text-sm leading-none">{apt.patientName || apt.user?.name}</p>
+                                                                        {isEmergency && (
+                                                                            <span className="px-1.5 py-0.5 bg-red-50 border border-red-100 text-red-600 text-[8px] font-black rounded uppercase tracking-wider">
+                                                                                Emergency
+                                                                            </span>
+                                                                        )}
+                                                                        {lowMed && (
+                                                                            <span className="px-1.5 py-0.5 bg-amber-50 border border-amber-100 text-amber-750 text-[8px] font-bold rounded uppercase tracking-wider">
+                                                                                Med Low
+                                                                            </span>
+                                                                        )}
+                                                                    </div>
+                                                                    <p className="text-[11px] text-slate-500 mt-1.5 font-semibold">
+                                                                        {meta.cancerType} · Stage {meta.stage} · {meta.gender}, {meta.age}y
+                                                                    </p>
+                                                                </div>
                                                             </div>
 
-                                                            {/* Status */}
-                                                            <div className="hidden md:block shrink-0">
-                                                                <span className={`px-2.5 py-1 text-[10px] font-bold rounded-full border uppercase ${
-                                                                    apt.status === 'ACCEPTED' ? 'bg-emerald-50 text-emerald-700 border-emerald-100' :
-                                                                    apt.status === 'PENDING' ? 'bg-amber-50 text-amber-700 border-amber-100' :
-                                                                    'bg-slate-50 text-slate-600 border-slate-200'
-                                                                }`}>{apt.status || 'Scheduled'}</span>
+                                                            {/* Appointment Time Column */}
+                                                            <div className="col-span-3 min-w-0 text-xs text-slate-600 font-semibold">
+                                                                <p className="text-slate-800 font-bold">{apt.time}</p>
+                                                                <p className="text-[10px] text-slate-400 mt-1">{new Date(apt.date).toLocaleDateString(undefined, { month: 'short', day: 'numeric', year: 'numeric' })}</p>
                                                             </div>
 
-                                                            {/* Actions */}
-                                                            <div className="flex items-center gap-2 shrink-0">
+                                                            {/* Status Column */}
+                                                            <div className="col-span-2 shrink-0">
+                                                                <span className={`px-2 py-0.5 text-[9px] font-black rounded border uppercase tracking-wide ${
+                                                                    statusStyles[apt.status] || statusStyles.SCHEDULED
+                                                                }`}>
+                                                                    {apt.status || 'Scheduled'}
+                                                                </span>
+                                                            </div>
+
+                                                            {/* Actions Column */}
+                                                            <div className="col-span-2 flex items-center justify-end gap-2.5 w-full">
                                                                 <button
                                                                     onClick={async () => {
                                                                         const details = await getPatientDetails(user.id, apt.userId);
                                                                         setShowBriefing({ ...details, appointmentId: apt.id });
                                                                     }}
-                                                                    className="px-3.5 py-2 bg-indigo-50 text-indigo-600 font-bold text-xs rounded-xl hover:bg-indigo-100 transition-all border border-indigo-100 flex items-center gap-1.5">
-                                                                    <FileText size={13} /> Brief
+                                                                    className="px-2.5 py-1.5 bg-indigo-50/50 hover:bg-indigo-50 text-indigo-600 font-bold text-xs rounded-lg transition-all border border-indigo-100/50 flex items-center gap-1 shrink-0"
+                                                                >
+                                                                    <FileText size={12} /> Brief
                                                                 </button>
                                                                 <button
                                                                     onClick={() => handleViewPatient(apt.userId)}
-                                                                    className="px-3.5 py-2 bg-slate-900 text-white font-bold text-xs rounded-xl hover:bg-slate-800 transition-all flex items-center gap-1.5">
-                                                                    Open <ArrowRight size={13} />
+                                                                    className="px-2.5 py-1.5 bg-slate-900 hover:bg-slate-800 text-white font-bold text-xs rounded-lg transition-all flex items-center gap-1 shrink-0"
+                                                                >
+                                                                    Open
                                                                 </button>
                                                             </div>
                                                         </motion.div>
@@ -1108,7 +1370,7 @@ const DoctorDashboard = () => {
                                                 <div className="flex items-center gap-3">
                                                     <Clock size={15} className={i < appointments.length ? 'text-indigo-500' : 'text-slate-300'} />
                                                     <span className="text-sm font-semibold text-slate-700">{slot}</span>
-                                                    {i < appointments.length && <span className="text-xs font-bold text-indigo-600">{appointments[i]?.user?.name}</span>}
+                                                    {i < appointments.length && <span className="text-xs font-bold text-indigo-600">{appointments[i]?.patientName || appointments[i]?.user?.name}</span>}
                                                 </div>
                                                 {i < appointments.length
                                                     ? <span className="text-[10px] font-bold px-2.5 py-1 bg-indigo-100 text-indigo-700 rounded-full border border-indigo-200 uppercase">Booked</span>
@@ -1180,7 +1442,7 @@ const DoctorDashboard = () => {
                                     <h2 className="text-2xl font-black text-slate-900">Pre-Consultation Briefing</h2>
                                     <p className="text-slate-400 mt-1 text-xs font-medium">Case #{showBriefing.id?.slice(-6)?.toUpperCase()} · Prepared by CanQure Intelligence</p>
                                 </div>
-                                <button onClick={() => setShowBriefing(null)} className="p-2 hover:bg-slate-200 rounded-xl transition-colors"><X size={20} className="text-slate-400" /></button>
+                                                <button onClick={() => setShowBriefing(null)} className="p-2 hover:bg-slate-200 rounded-xl transition-colors"><X size={20} className="text-slate-400" /></button>
                             </header>
                             <div className="flex-1 overflow-y-auto p-7">
                                 <div className="bg-gradient-to-br from-slate-900 to-indigo-950 rounded-2xl p-7 text-white mb-7">
@@ -1196,12 +1458,24 @@ const DoctorDashboard = () => {
                                         <div className="space-y-3">
                                             <div>
                                                 <p className="text-[9px] font-black text-indigo-400 uppercase tracking-widest mb-1.5">Patient</p>
-                                                <p className="text-sm font-bold">{showBriefing.name} · {getMockPatientMeta(showBriefing.id)?.cancerType}</p>
+                                                <p className="text-sm font-bold">
+                                                    {showBriefing.name} · {
+                                                        showBriefing.cancerType?.[0]
+                                                            ? `${showBriefing.cancerType[0].name} · Stage ${['I', 'II', 'III', 'IV'][showBriefing.cancerType[0].stage - 1] || showBriefing.cancerType[0].stage}`
+                                                            : 'Oncology Patient'
+                                                    }
+                                                </p>
                                             </div>
                                             <div>
                                                 <p className="text-[9px] font-black text-indigo-400 uppercase tracking-widest mb-1.5">Recent Symptoms</p>
-                                                {['Chest pain for 2 weeks', 'Persistent cough', 'Difficulty breathing at night'].map((s, i) => (
-                                                    <div key={i} className="flex gap-2 text-xs text-indigo-200 font-medium mt-1"><div className="w-1.5 h-1.5 rounded-full bg-amber-400 mt-1 shrink-0" />{s}</div>
+                                                {(showBriefing.cancerType?.[0]?.symptoms
+                                                    ? showBriefing.cancerType[0].symptoms.split(',').map(s => s.trim())
+                                                    : ['Fatigue', 'Localized pain']
+                                                ).map((s, i) => (
+                                                    <div key={i} className="flex gap-2 text-xs text-indigo-200 font-medium mt-1">
+                                                        <div className="w-1.5 h-1.5 rounded-full bg-amber-400 mt-1 shrink-0" />
+                                                        {s}
+                                                    </div>
                                                 ))}
                                             </div>
                                         </div>
@@ -1209,7 +1483,9 @@ const DoctorDashboard = () => {
                                             <div>
                                                 <p className="text-[9px] font-black text-indigo-400 uppercase tracking-widest mb-1.5">AI Intelligence Findings</p>
                                                 <div className="p-3 bg-amber-500/20 border border-amber-500/30 rounded-xl">
-                                                    <p className="text-xs text-amber-200 leading-relaxed">PET scan: 3cm mass in right lower lobe. CEA elevated (8.2). Prior biopsy recommended. LDH trending high over 3 months.</p>
+                                                    <p className="text-xs text-amber-200 leading-relaxed">
+                                                        {getAIBriefingFindings(showBriefing.cancerType?.[0]?.name)}
+                                                    </p>
                                                 </div>
                                             </div>
                                             <div className="grid grid-cols-2 gap-3">

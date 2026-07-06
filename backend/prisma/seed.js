@@ -8,6 +8,7 @@ async function main() {
 
   // 1. Clean Database
   console.log('Cleaning old records...');
+  await prisma.report.deleteMany().catch(() => {});
   await prisma.refillOrder.deleteMany().catch(() => {});
   await prisma.medicine.deleteMany().catch(() => {});
   await prisma.cancerType.deleteMany().catch(() => {});
@@ -220,10 +221,11 @@ async function main() {
   }
   console.log('Seeded admins.');
 
-  // 6. Seed Demo Patient
-  console.log('Seeding patient...');
+  // 6. Seed Demo Patients
+  console.log('Seeding patient users...');
   const patientHashPassword = await bcrypt.hash('patient123', 10);
-  const patient = await prisma.user.create({
+  
+  const john = await prisma.user.create({
     data: {
       username: 'patient_demo',
       email: 'patient@canqure.com',
@@ -233,7 +235,37 @@ async function main() {
     }
   });
 
-  // Seed CancerType for patient
+  const james = await prisma.user.create({
+    data: {
+      username: 'james_morrison',
+      email: 'james@canqure.com',
+      password: patientHashPassword,
+      name: 'James Morrison',
+      role: 'PATIENT'
+    }
+  });
+
+  const clara = await prisma.user.create({
+    data: {
+      username: 'clara_oswald',
+      email: 'clara@canqure.com',
+      password: patientHashPassword,
+      name: 'Clara Oswald',
+      role: 'PATIENT'
+    }
+  });
+
+  const robert = await prisma.user.create({
+    data: {
+      username: 'robert_baratheon',
+      email: 'robert@canqure.com',
+      password: patientHashPassword,
+      name: 'Robert Baratheon',
+      role: 'PATIENT'
+    }
+  });
+
+  // Seed CancerTypes for patients
   await prisma.cancerType.create({
     data: {
       name: 'Breast Cancer',
@@ -241,19 +273,145 @@ async function main() {
       description: 'Invasive ductal carcinoma, hormone receptor positive',
       symptoms: 'Mild fatigue, localized pain',
       treatments: 'Hormone therapy (Tamoxifen), targeted therapy',
-      userId: patient.id
+      userId: john.id
     }
   });
-  console.log('Seeded cancer type for patient.');
+
+  await prisma.cancerType.create({
+    data: {
+      name: 'Lung Cancer',
+      stage: 4,
+      description: 'Adenocarcinoma of the lung, EGFR mutation positive',
+      symptoms: 'Persistent cough, mild shortness of breath',
+      treatments: 'Targeted immunotherapy (Pembrolizumab)',
+      userId: james.id
+    }
+  });
+
+  await prisma.cancerType.create({
+    data: {
+      name: 'Breast Cancer',
+      stage: 2,
+      description: 'HER2 positive ductal carcinoma in situ',
+      symptoms: 'Mild fatigue, localized discomfort',
+      treatments: 'Hormone therapy (Tamoxifen), targeted therapy',
+      userId: clara.id
+    }
+  });
+
+  await prisma.cancerType.create({
+    data: {
+      name: 'Colon Cancer',
+      stage: 3,
+      description: 'Adenocarcinoma of the ascending colon',
+      symptoms: 'Abdominal pain, fatigue',
+      treatments: 'Adjuvant chemotherapy (FOLFOX)',
+      userId: robert.id
+    }
+  });
+  console.log('Seeded unique cancer types for all patients.');
 
   // 7. Seed Mock Appointments
-  console.log('Seeding mock appointments...');
+  console.log('Seeding mock appointments and patient medicines...');
   const docForApt = await prisma.doctor.findFirst();
-  if (docForApt && patient) {
+  if (docForApt) {
+    const now = new Date();
+    
+    // James' medicines
+    await prisma.medicine.create({
+      data: {
+        medName: 'Pembrolizumab 100mg',
+        description: 'PD-1 receptor blocker immunotherapy.',
+        dose: '200mg IV',
+        frequency: 'Every 3 weeks',
+        startDate: new Date(now.getTime() - 10 * 86400000),
+        endDate: new Date(now.getTime() + 11 * 86400000),
+        userId: james.id,
+        doctorId: docForApt.id
+      }
+    });
+    await prisma.medicine.create({
+      data: {
+        medName: 'Ondansetron 8mg',
+        description: 'Antiemetic for nausea prevention.',
+        dose: '8mg Oral',
+        frequency: 'As needed',
+        startDate: new Date(now.getTime() - 11 * 86400000),
+        endDate: new Date(now.getTime() + 3 * 86400000),
+        userId: james.id,
+        doctorId: docForApt.id
+      }
+    });
+    await prisma.medicine.create({
+      data: {
+        medName: 'Prednisolone 10mg',
+        description: 'Corticosteroid to manage side effects.',
+        dose: '10mg Oral',
+        frequency: 'Once daily',
+        startDate: new Date(now.getTime() - 22 * 86400000),
+        endDate: new Date(now.getTime() + 6 * 86400000),
+        userId: james.id,
+        doctorId: docForApt.id
+      }
+    });
+
+    // Clara's medicines
+    await prisma.medicine.create({
+      data: {
+        medName: 'Tamoxifen 20mg',
+        description: 'Estrogen receptor blocker hormone therapy.',
+        dose: '20mg Oral',
+        frequency: 'Once daily',
+        startDate: new Date(now.getTime() - 12 * 86400000),
+        endDate: new Date(now.getTime() + 18 * 86400000),
+        userId: clara.id,
+        doctorId: docForApt.id
+      }
+    });
+    await prisma.medicine.create({
+      data: {
+        medName: 'Imatinib 400mg',
+        description: 'Tyrosine kinase inhibitor targeted therapy.',
+        dose: '400mg Oral',
+        frequency: 'Once daily',
+        startDate: new Date(now.getTime() - 25 * 86400000),
+        endDate: new Date(now.getTime() + 5 * 86400000),
+        userId: clara.id,
+        doctorId: docForApt.id
+      }
+    });
+
+    // Robert's medicines
+    await prisma.medicine.create({
+      data: {
+        medName: 'Capecitabine 1500mg',
+        description: 'Fluorouracil prodrug oral chemotherapy.',
+        dose: '1500mg Oral',
+        frequency: 'Twice daily for 14 days',
+        startDate: new Date(now.getTime() - 5 * 86400000),
+        endDate: new Date(now.getTime() + 9 * 86400000),
+        userId: robert.id,
+        doctorId: docForApt.id
+      }
+    });
+    await prisma.medicine.create({
+      data: {
+        medName: 'Oxaliplatin 100mg',
+        description: 'Platinum-based alkylating agent chemotherapy.',
+        dose: '100mg IV',
+        frequency: 'Every 3 weeks',
+        startDate: new Date(now.getTime() - 0 * 86400000),
+        endDate: new Date(now.getTime() + 21 * 86400000),
+        userId: robert.id,
+        doctorId: docForApt.id
+      }
+    });
+    console.log('Seeded patient medicines successfully.');
+
     const mockAppointments = [
-      { date: '2026-06-23', time: '10:00', patientName: 'James Morrison', userId: patient.id, doctorId: docForApt.id, urgencyLevel: 'URGENT', status: 'SCHEDULED', hospitalId: medanta.id },
-      { date: '2026-06-24', time: '11:00', patientName: 'Clara Oswald', userId: patient.id, doctorId: docForApt.id, urgencyLevel: 'NORMAL', status: 'SCHEDULED', hospitalId: medanta.id },
-      { date: '2026-06-25', time: '14:00', patientName: 'Robert Baratheon', userId: patient.id, doctorId: docForApt.id, urgencyLevel: 'NORMAL', status: 'SCHEDULED', hospitalId: medanta.id }
+      { date: dates[0], time: '10:00', patientName: 'James Morrison', userId: james.id, doctorId: docForApt.id, urgencyLevel: 'URGENT', status: 'SCHEDULED', hospitalId: medanta.id },
+      { date: dates[1], time: '11:00', patientName: 'Clara Oswald', userId: clara.id, doctorId: docForApt.id, urgencyLevel: 'NORMAL', status: 'SCHEDULED', hospitalId: medanta.id },
+      { date: dates[2], time: '14:00', patientName: 'Robert Baratheon', userId: robert.id, doctorId: docForApt.id, urgencyLevel: 'NORMAL', status: 'SCHEDULED', hospitalId: medanta.id }
     ];
 
     for (const appt of mockAppointments) {
@@ -285,12 +443,12 @@ async function main() {
 
   // 8. Seed Mock Refill Orders
   console.log('Seeding mock refill orders...');
-  if (patient) {
+  if (john) {
     const mockRefills = [
       {
         medName: 'Imatinib 400mg',
-        patientName: patient.name || 'John Patient',
-        patientId: patient.id,
+        patientName: john.name || 'John Patient',
+        patientId: john.id,
         pharmacyId: apolloPharmacy.id,
         price: '₹2,000',
         status: 'PENDING',
@@ -299,8 +457,8 @@ async function main() {
       },
       {
         medName: 'Doxorubicin 50mg',
-        patientName: patient.name || 'John Patient',
-        patientId: patient.id,
+        patientName: john.name || 'John Patient',
+        patientId: john.id,
         pharmacyId: medplusPharmacy.id,
         price: '₹4,500',
         status: 'PREPARING',
@@ -309,8 +467,8 @@ async function main() {
       },
       {
         medName: 'Pembrolizumab 100mg',
-        patientName: patient.name || 'John Patient',
-        patientId: patient.id,
+        patientName: john.name || 'John Patient',
+        patientId: john.id,
         pharmacyId: fortisPharmacy.id,
         price: '₹85,000',
         status: 'DELIVERED',

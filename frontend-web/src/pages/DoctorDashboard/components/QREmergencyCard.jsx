@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
-import { ShieldAlert, Phone, MapPin, Loader2, AlertCircle, QrCode, Printer } from 'lucide-react';
+import { ShieldAlert, Phone, MapPin, Loader2, AlertCircle, QrCode, Printer, ChevronDown } from 'lucide-react';
+import { motion, AnimatePresence } from 'framer-motion';
 import api from '../../../api/axios';
 
 const fetchEmergencyData = async ({ queryKey }) => {

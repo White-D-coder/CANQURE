@@ -16,7 +16,7 @@ export class IdentityService extends BaseService {
         }
 
         const hashedPassword = await bcrypt.hash(password, 10);
-        const newUser = await prisma.user.create({
+        const newUser = await this.prisma.user.create({
             data: {
                 username,
                 name: username,

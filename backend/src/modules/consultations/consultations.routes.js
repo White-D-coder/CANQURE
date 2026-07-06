@@ -12,8 +12,8 @@ router.get('/availability', verifyPatient, controller.getDoctorAvailability);
 router.post('/book-appointment', verifyPatient, controller.bookAppointment);
 
 // Doctor appointments list & patient details access
-router.get('/doctors/:id/appointments', verifyDoctor, controller.getDoctorAppointments);
-router.get('/doctors/:doctorId/patient/:patientId', verifyDoctor, controller.getPatientDetails);
+router.get('/:id/appointments', verifyDoctor, controller.getDoctorAppointments);
+router.get('/:doctorId/patient/:patientId', verifyDoctor, controller.getPatientDetails);
 
 // Slot scheduling (Admin & Doctor authorized)
 router.post('/schedule/create', verifyAdmin, controller.createTimeSlots);

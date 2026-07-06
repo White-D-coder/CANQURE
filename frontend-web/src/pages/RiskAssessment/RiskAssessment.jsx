@@ -50,7 +50,7 @@ const RiskAssessment = () => {
         setError('');
         try {
             // Fetch latest report to extract lab values
-            const res = await api.get(`/reports/user/${user.id}`);
+            const res = await api.get(`/reports/patient/${user.id}`);
             if (res.data && res.data.length > 0) {
                 const latestReport = res.data[0]; // Assuming sorted by date descending
                 // Simple extraction logic - in a real app, this would be more robust

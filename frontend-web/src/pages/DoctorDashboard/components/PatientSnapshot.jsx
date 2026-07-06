@@ -49,53 +49,57 @@ const PatientSnapshot = ({ patientId, patientName }) => {
     } = snapshot || {};
 
     return (
-        <div className="bg-white rounded-3xl border border-slate-200/80 shadow-[0_1px_4px_rgba(0,0,0,0.03)] p-7">
-            <div className="flex flex-col lg:flex-row gap-8">
+        <div className="bg-white rounded-2xl border border-slate-200/80 p-6 shadow-sm">
+            <div className="flex flex-col lg:flex-row items-start lg:items-center justify-between gap-6">
                 {/* Demographics Block */}
-                <div className="flex items-center gap-5">
-                    <div className="w-20 h-20 rounded-3xl bg-gradient-to-br from-indigo-100 to-indigo-200 flex items-center justify-center text-indigo-700 font-black text-3xl shrink-0">
+                <div className="flex items-center gap-4">
+                    <div className="w-16 h-16 rounded-xl bg-slate-50 border border-slate-250/60 flex items-center justify-center text-slate-700 font-black text-2xl shrink-0">
                         {patientName?.charAt(0) || 'P'}
                     </div>
                     <div>
-                        <h2 className="text-2xl font-black text-slate-900">{patientName}</h2>
-                        <p className="text-slate-500 mt-1">{age}y · {gender} · Blood: {bloodType || 'N/A'}</p>
-                        <div className="flex gap-2 mt-2 flex-wrap">
-                            <span className="px-3 py-1 bg-indigo-50 text-indigo-700 text-xs font-bold rounded-full border border-indigo-100">
+                        <h2 className="text-xl font-black text-slate-900 tracking-tight">{patientName}</h2>
+                        <p className="text-xs text-slate-500 font-medium mt-1">
+                            {age} years old · {gender} · Blood Type: <span className="font-bold text-slate-700">{bloodType || 'N/A'}</span>
+                        </p>
+                        <div className="flex gap-1.5 mt-2.5 flex-wrap">
+                            <span className="px-2.5 py-0.5 bg-indigo-50 border border-indigo-100 text-indigo-600 text-[10px] font-bold rounded-lg">
                                 {cancerType} · Stage {stage}
                             </span>
                             {ecog !== undefined && (
-                                <span className="px-2.5 py-1 bg-amber-50 text-amber-700 text-[10px] font-bold rounded-full border border-amber-100">
-                                    ECOG: {ecog}
+                                <span className="px-2 py-0.5 bg-slate-50 border border-slate-200 text-slate-650 text-[10px] font-bold rounded-lg">
+                                    ECOG Performance: {ecog}
                                 </span>
                             )}
                         </div>
                     </div>
                 </div>
 
-                {/* Details Panels */}
-                <div className="flex-1 grid grid-cols-1 sm:grid-cols-3 gap-4">
-                    <div className="p-4 bg-slate-50 rounded-2xl border border-slate-100">
-                        <p className="text-[9px] font-black text-slate-400 uppercase tracking-widest mb-1.5">Caregiver & Emergency Contact</p>
-                        <p className="text-sm font-semibold text-slate-900">{caregiver || 'None Registered'}</p>
+                {/* Details Panels Grid */}
+                <div className="w-full lg:w-auto flex-1 grid grid-cols-1 sm:grid-cols-3 gap-4 lg:max-w-2xl">
+                    <div className="p-4 bg-slate-50/50 border border-slate-100 rounded-xl">
+                        <p className="text-[9px] font-black text-slate-400 uppercase tracking-wider mb-1">Caregiver</p>
+                        <p className="text-xs font-semibold text-slate-800">{caregiver || 'None Registered'}</p>
                         {caregiverPhone && (
-                            <p className="text-[11px] text-slate-400 flex items-center gap-1 mt-1">
-                                <Phone size={10} /> {caregiverPhone}
+                            <p className="text-[10px] text-slate-500 flex items-center gap-1 mt-1 font-medium">
+                                <Phone size={10} className="text-slate-400" /> {caregiverPhone}
                             </p>
                         )}
                     </div>
-                    <div className="p-4 bg-slate-50 rounded-2xl border border-slate-100">
-                        <p className="text-[9px] font-black text-slate-400 uppercase tracking-widest mb-1.5">Preferred Pharmacy</p>
-                        <p className="text-sm font-semibold text-slate-900">{pharmacy || 'Not Selected'}</p>
-                        <p className="text-[11px] text-slate-400 flex items-center gap-1 mt-1">
-                            <MapPin size={10} /> Local Partner
+
+                    <div className="p-4 bg-slate-50/50 border border-slate-100 rounded-xl">
+                        <p className="text-[9px] font-black text-slate-400 uppercase tracking-wider mb-1">Pharmacy Link</p>
+                        <p className="text-xs font-semibold text-slate-800">{pharmacy || 'Not Selected'}</p>
+                        <p className="text-[10px] text-slate-500 flex items-center gap-1 mt-1 font-medium">
+                            <MapPin size={10} className="text-slate-400" /> Local Partner
                         </p>
                     </div>
-                    <div className="p-4 bg-slate-50 rounded-2xl border border-slate-100">
-                        <p className="text-[9px] font-black text-slate-400 uppercase tracking-widest mb-1.5">Allergies & Last Consult</p>
-                        <p className="text-xs font-bold text-rose-700 bg-rose-50 border border-rose-100 px-2 py-0.5 rounded-lg inline-block mb-1.5">
-                            Allergies: {allergies || 'None'}
+
+                    <div className="p-4 bg-slate-50/50 border border-slate-100 rounded-xl">
+                        <p className="text-[9px] font-black text-slate-400 uppercase tracking-wider mb-1">Allergies</p>
+                        <p className="text-xs font-bold text-rose-600 bg-rose-50 border border-rose-100/60 px-2 py-0.5 rounded-lg inline-block">
+                            {allergies || 'None Reported'}
                         </p>
-                        <p className="text-xs text-slate-500 font-medium">Last Consult: {lastConsult || 'Never'}</p>
+                        <p className="text-[10px] text-slate-500 mt-1 font-medium">Last Consult: {lastConsult || 'Never'}</p>
                     </div>
                 </div>
             </div>
