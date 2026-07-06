@@ -175,19 +175,21 @@ model Admin {
 }
 
 model Medicine {
-  id          String   @id @default(auto()) @map("_id") @db.ObjectId
-  medName     String
-  description String
-  dose        String
-  frequency   String
-  startDate   DateTime
-  endDate     DateTime
+  id             String    @id @default(auto()) @map("_id") @db.ObjectId
+  medName        String
+  description    String
+  dose           String
+  frequency      String
+  startDate      DateTime
+  endDate        DateTime
+  supplyEndDate  DateTime?
+  lastRefillDate DateTime?
 
   // Relations
-  userId      String   @db.ObjectId
-  user        User     @relation(fields: [userId], references: [id])
-  doctorId    String?  @db.ObjectId
-  doctor      Doctor?  @relation(fields: [doctorId], references: [id])
+  userId         String    @db.ObjectId
+  user           User      @relation(fields: [userId], references: [id])
+  doctorId       String?   @db.ObjectId
+  doctor         Doctor?   @relation(fields: [doctorId], references: [id])
 }
 
 model CancerType {
@@ -220,18 +222,64 @@ model Report {
 }
 
 model RefillOrder {
-  id            String   @id @default(auto()) @map("_id") @db.ObjectId
-  medName       String
-  patientName   String
-  price         String
-  status        String   @default("PENDING")
-  deliveryTime  String
-  daysRemaining Int      @default(5)
-  createdAt     DateTime @default(now())
+  id                   String    @id @default(auto()) @map("_id") @db.ObjectId
+  medName              String
+  patientName          String
+  price                String
+  status               String    @default("PENDING")
+  deliveryTime         String
+  daysRemaining        Int       @default(5)
+  createdAt            DateTime  @default(now())
+  updatedAt            DateTime  @updatedAt
+
+  medicineId           String?   @db.ObjectId
+  trackingId           String?
+  deliveryAddress      String?
+  routePolyline        String?
+  estimatedArrival     DateTime?
+  simulatedRiderCoords String?
+  deliveredAt          DateTime?
 
   // Relations
-  patientId     String   @db.ObjectId
-  user          User     @relation(fields: [patientId], references: [id])
-  pharmacyId    String   @db.ObjectId
-  pharmacy      Pharmacy @relation(fields: [pharmacyId], references: [id])
+  patientId            String    @db.ObjectId
+  user                 User      @relation(fields: [patientId], references: [id])
+  pharmacyId           String    @db.ObjectId
+  pharmacy             Pharmacy  @relation(fields: [pharmacyId], references: [id])
+}
+
+model DeliveryRider {
+  id           String @id @default(auto()) @map("_id") @db.ObjectId
+  name         String
+  phone        String
+  vehicle      String
+  liveLocation String // JSON string
+  status       String @default("IDLE")
+}
+
+model AuditLog {
+  id           String   @id @default(auto()) @map("_id") @db.ObjectId
+  userId       String   @db.ObjectId
+  action       String
+  resourceType String
+  resourceId   String
+  details      String?
+  timestamp    DateTime @default(now())
+}
+
+model Alert {
+  id        String   @id @default(auto()) @map("_id") @db.ObjectId
+  patientId String   @db.ObjectId
+  title     String
+  message   String
+  type      String
+  createdAt DateTime @default(now())
+}
+
+model CareGap {
+  id        String   @id @default(auto()) @map("_id") @db.ObjectId
+  patientId String   @db.ObjectId
+  title     String
+  message   String
+  status    String   @default("OPEN")
+  createdAt DateTime @default(now())
 }

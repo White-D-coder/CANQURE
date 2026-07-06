@@ -1,6 +1,7 @@
 import { useState, useEffect, useRef } from 'react';
 import { useAuth } from '../../contexts/AuthContext';
-import { getDashboardData, getDoctors, bookAppointment, createRefillOrder, getPatientRefillOrders } from '../../api/user';
+import { getDashboardData, getDoctors, bookAppointment, createRefillOrder, getPatientRefillOrders, confirmRefillDelivery } from '../../api/user';
+import RefillDeliveryMap from './components/RefillDeliveryMap';
 import { useNavigate } from 'react-router-dom';
 import { 
     LayoutDashboard, 
@@ -20,6 +21,7 @@ import {
     X, 
     Scan, 
     ShieldAlert, 
+    ShieldCheck,
     Database, 
     Activity,
     UploadCloud,
@@ -137,6 +139,7 @@ const UserDashboard = () => {
     const [refillStep, setRefillStep] = useState('list'); // list -> confirm -> tracking
     const [deliveryEstimate, setDeliveryEstimate] = useState('');
     const [refillOrders, setRefillOrders] = useState([]);
+    const [expandedMapOrderId, setExpandedMapOrderId] = useState(null);
     const [journeyFilter, setJourneyFilter] = useState('ALL');
     const [doctorFilter, setDoctorFilter] = useState('recommended');
     const [selectedCalendarDate, setSelectedCalendarDate] = useState(null);
@@ -317,6 +320,61 @@ const UserDashboard = () => {
             console.error("Failed to place refill order", err);
             alert("Failed to place refill order: " + (err.response?.data?.message || err.message));
         }
+    };
+
+    const handleConfirmHandover = async (orderId) => {
+        const executeConfirmation = async (retryCount = 0) => {
+            try {
+                const res = await confirmRefillDelivery(orderId);
+                
+                // Refresh data
+                const refills = await getPatientRefillOrders();
+                setRefillOrders(refills);
+                
+                const freshDashboard = await getDashboardData();
+                setDashboardData(freshDashboard);
+                if (freshDashboard.medications) {
+                    setMedications(freshDashboard.medications);
+                }
+                
+                setDeliveryToast({
+                    medName: res.medName || "Medication Refill",
+                    status: "delivered",
+                    message: "Verification successful! Supply extended (+30 days)."
+                });
+                
+                setTimeout(() => setDeliveryToast(null), 4000);
+            } catch (err) {
+                console.error(`Handover confirmation failed (Attempt ${retryCount + 1}):`, err);
+                
+                if (err.response?.status === 409 || err.message?.includes("already delivered")) {
+                    const refills = await getPatientRefillOrders();
+                    setRefillOrders(refills);
+                    return;
+                }
+                
+                if (retryCount < 5) {
+                    const delays = [5000, 10000, 20000, 40000, 80000];
+                    const delay = delays[retryCount];
+                    console.log(`Queued handover confirmation locally. Retrying in ${delay / 1000}s...`);
+                    
+                    setDeliveryToast({
+                        medName: "Network Connection Issue",
+                        status: "offline",
+                        message: `Offline queue active. Retrying confirmation in ${delay / 1000}s...`
+                    });
+                    
+                    setTimeout(() => {
+                        executeConfirmation(retryCount + 1);
+                    }, delay);
+                } else {
+                    alert("Verification failed after 5 retries. Please check your internet connection.");
+                    setDeliveryToast(null);
+                }
+            }
+        };
+
+        await executeConfirmation();
     };
 
     // Mock functions for workflows
@@ -1454,35 +1512,102 @@ const UserDashboard = () => {
                             </h3>
                             <p className="text-xs text-slate-400 mb-6">Track delivery status for pending prescription refills.</p>
 
-                            {refillOrders && refillOrders.length > 0 ? (
+                            {refillOrders && refillOrders.filter(o => o.status !== 'DELIVERED').length > 0 ? (
+                                <div className="space-y-4">
+                                    {refillOrders.filter(o => o.status !== 'DELIVERED').map((order) => {
+                                        const isMapExpanded = expandedMapOrderId === order.id;
+                                        const canTrack = ['OUT_FOR_DELIVERY', 'ARRIVING', 'HANDOVER_PENDING'].includes(order.status);
+                                        return (
+                                            <div key={order.id} className="p-5 bg-slate-50/50 rounded-2xl border border-slate-200/60 flex flex-col gap-4 hover:border-slate-300 transition-all duration-200">
+                                                <div className="flex flex-col sm:flex-row justify-between sm:items-center gap-4">
+                                                    <div className="space-y-1">
+                                                        <h4 className="font-semibold text-slate-900 text-sm">Order #{order.id.slice(-6).toUpperCase()}</h4>
+                                                        <p className="text-xs text-slate-500">{order.medName} · {order.pharmacyName}</p>
+                                                        <div className="flex items-center gap-2 mt-2">
+                                                            <span className={`w-2.5 h-2.5 rounded-full ${
+                                                                order.status === 'OUT_FOR_DELIVERY' ? 'bg-blue-500 animate-pulse' :
+                                                                order.status === 'ARRIVING' ? 'bg-indigo-500 animate-pulse' :
+                                                                order.status === 'HANDOVER_PENDING' ? 'bg-purple-500 animate-pulse' :
+                                                                order.status === 'PREPARING' ? 'bg-amber-500 animate-pulse' : 'bg-slate-400 animate-pulse'
+                                                            }`}></span>
+                                                            <span className={`text-[10px] font-bold uppercase ${
+                                                                order.status === 'OUT_FOR_DELIVERY' ? 'text-blue-600' :
+                                                                order.status === 'ARRIVING' ? 'text-indigo-600' :
+                                                                order.status === 'HANDOVER_PENDING' ? 'text-purple-600 font-bold' :
+                                                                order.status === 'PREPARING' ? 'text-amber-600' : 'text-slate-500'
+                                                            }`}>
+                                                                {order.status.replace(/_/g, ' ')}
+                                                            </span>
+                                                        </div>
+                                                    </div>
+                                                    
+                                                    <div className="flex flex-wrap items-center gap-2">
+                                                        {canTrack && (
+                                                            <button
+                                                                onClick={() => setExpandedMapOrderId(isMapExpanded ? null : order.id)}
+                                                                className="px-3 py-1.5 border border-slate-200 hover:bg-slate-100 rounded-lg text-xs font-semibold transition-all"
+                                                            >
+                                                                {isMapExpanded ? 'Hide Map' : 'Track Delivery'}
+                                                            </button>
+                                                        )}
+                                                        {order.status === 'HANDOVER_PENDING' && (
+                                                            <button
+                                                                onClick={() => handleConfirmHandover(order.id)}
+                                                                className="px-4 py-2 bg-emerald-600 hover:bg-emerald-700 text-white rounded-lg text-xs font-semibold shadow-sm transition-all flex items-center gap-1"
+                                                            >
+                                                                <ShieldCheck size={14} /> Verify Handover
+                                                            </button>
+                                                        )}
+                                                        <span className="text-xs font-semibold text-slate-500 shrink-0 ml-2">Est: {order.deliveryTime}</span>
+                                                    </div>
+                                                </div>
+
+                                                {/* Expanded Delivery Map */}
+                                                {isMapExpanded && canTrack && (
+                                                    <div className="w-full">
+                                                        <RefillDeliveryMap orderId={order.id} status={order.status} />
+                                                    </div>
+                                                )}
+                                            </div>
+                                        );
+                                    })}
+                                </div>
+                            ) : (
+                                <div className="p-6 border border-dashed border-slate-200 rounded-2xl text-center text-slate-400 text-xs">
+                                    No active shipments. Click "Order Refill" under My Medicines to place one.
+                                </div>
+                            )}
+                        </div>
+
+                        {/* Delivery History (Previous Deliveries) */}
+                        <div className="bg-white p-6 rounded-3xl border border-slate-200/80 shadow-[0_1px_3px_rgba(0,0,0,0.02)]">
+                            <h3 className="text-lg font-semibold text-slate-900 mb-2 flex items-center gap-2">
+                                <CheckCircle size={18} className="text-slate-500" /> Previous Deliveries
+                            </h3>
+                            <p className="text-xs text-slate-400 mb-6">Completed medication handovers.</p>
+
+                            {refillOrders && refillOrders.filter(o => o.status === 'DELIVERED').length > 0 ? (
                                 <div className="space-y-3">
-                                    {refillOrders.map((order) => (
+                                    {refillOrders.filter(o => o.status === 'DELIVERED').map((order) => (
                                         <div key={order.id} className="p-4 bg-slate-50/50 rounded-2xl border border-slate-200/60 flex flex-col sm:flex-row justify-between sm:items-center gap-4">
                                             <div className="space-y-1">
-                                                <h4 className="font-semibold text-slate-900 text-sm">Order #{order.id.slice(-6).toUpperCase()}</h4>
-                                                <p className="text-xs text-slate-500">{order.medName} · {order.pharmacyName}</p>
-                                                <div className="flex items-center gap-2 mt-2">
-                                                    <span className={`w-2.5 h-2.5 rounded-full ${
-                                                        order.status === 'DELIVERED' ? 'bg-green-500' :
-                                                        order.status === 'OUT_FOR_DELIVERY' ? 'bg-blue-500 animate-pulse' :
-                                                        order.status === 'PREPARING' ? 'bg-amber-500 animate-pulse' : 'bg-slate-400 animate-pulse'
-                                                    }`}></span>
-                                                    <span className={`text-[10px] font-bold uppercase ${
-                                                        order.status === 'DELIVERED' ? 'text-green-600' :
-                                                        order.status === 'OUT_FOR_DELIVERY' ? 'text-blue-600' :
-                                                        order.status === 'PREPARING' ? 'text-amber-600' : 'text-slate-500'
-                                                    }`}>
-                                                        {order.status.replace(/_/g, ' ')}
+                                                <div className="flex items-center gap-2">
+                                                    <h4 className="font-semibold text-slate-900 text-sm">{order.medName}</h4>
+                                                    <span className="px-2 py-0.5 bg-green-50 text-green-700 border border-green-100 rounded text-[9px] font-bold uppercase">
+                                                        Delivered
                                                     </span>
                                                 </div>
+                                                <p className="text-[11px] text-slate-500">Order #{order.id.slice(-6).toUpperCase()} · {order.pharmacyName} · Tracking: {order.trackingId || 'N/A'}</p>
                                             </div>
-                                            <span className="text-xs font-semibold text-slate-500 shrink-0">Est: {order.deliveryTime}</span>
+                                            <span className="text-xs font-semibold text-slate-500 shrink-0">
+                                                Delivered on: {new Date(order.createdAt).toLocaleDateString()}
+                                            </span>
                                         </div>
                                     ))}
                                 </div>
                             ) : (
                                 <div className="p-6 border border-dashed border-slate-200 rounded-2xl text-center text-slate-400 text-xs">
-                                    No active shipments. Click "Order Refill" under My Medicines to place one.
+                                    No completed deliveries found.
                                 </div>
                             )}
                         </div>
@@ -2771,6 +2896,28 @@ const UserDashboard = () => {
                             </div>
                         </motion.div>
                     </div>
+                )}
+            </AnimatePresence>
+
+            {/* Delivery Toast Alert */}
+            <AnimatePresence>
+                {deliveryToast && (
+                    <motion.div
+                        initial={{ opacity: 0, y: 50, scale: 0.95 }}
+                        animate={{ opacity: 1, y: 0, scale: 1 }}
+                        exit={{ opacity: 0, y: 50, scale: 0.95 }}
+                        className="fixed bottom-6 right-6 z-[9999] p-4 bg-slate-900 text-white rounded-2xl border border-slate-800 shadow-2xl flex items-center gap-3 max-w-sm"
+                    >
+                        {deliveryToast.status === 'offline' ? (
+                            <Clock className="text-amber-400 animate-spin shrink-0" size={20} />
+                        ) : (
+                            <CheckCircle className="text-emerald-400 shrink-0" size={20} />
+                        )}
+                        <div>
+                            <p className="font-bold text-xs">{deliveryToast.medName}</p>
+                            <p className="text-[11px] text-slate-300 mt-0.5">{deliveryToast.message}</p>
+                        </div>
+                    </motion.div>
                 )}
             </AnimatePresence>
         </div>

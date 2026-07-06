@@ -86,13 +86,17 @@ function PharmacyDashboard() {
 
     const handleUpdateStatus = async (orderId, currentStatus) => {
         const statusMap = {
-            'PENDING': 'PREPARING',
-            'PREPARING': 'OUT_FOR_DELIVERY',
-            'OUT_FOR_DELIVERY': 'DELIVERED',
+            'PENDING': 'CONFIRMED',
+            'CONFIRMED': 'PREPARING',
+            'PREPARING': 'PACKED',
+            'PACKED': 'OUT_FOR_DELIVERY',
+            'OUT_FOR_DELIVERY': 'OUT_FOR_DELIVERY',
+            'ARRIVING': 'ARRIVING',
+            'HANDOVER_PENDING': 'HANDOVER_PENDING',
             'DELIVERED': 'DELIVERED'
         };
         const nextStatus = statusMap[currentStatus];
-        if (nextStatus === currentStatus) return; // Already delivered
+        if (nextStatus === currentStatus) return; 
 
         try {
             await api.put(`/refill-orders/${orderId}/status`, { status: nextStatus });
@@ -282,14 +286,18 @@ function PharmacyDashboard() {
                                                         <span className={`w-2 h-2 rounded-full ${
                                                             order.status === 'DELIVERED' ? 'bg-green-500' :
                                                             order.status === 'OUT_FOR_DELIVERY' ? 'bg-blue-500 animate-pulse' :
-                                                            order.status === 'PREPARING' ? 'bg-amber-500 animate-pulse' : 'bg-slate-400 animate-pulse'
+                                                            order.status === 'ARRIVING' ? 'bg-indigo-500 animate-pulse' :
+                                                            order.status === 'HANDOVER_PENDING' ? 'bg-purple-500 animate-pulse' :
+                                                            order.status === 'PREPARING' ? 'bg-amber-500 animate-pulse' : 'bg-slate-400'
                                                         }`}></span>
                                                         <span className={`font-semibold uppercase text-[10px] ${
                                                             order.status === 'DELIVERED' ? 'text-green-600' :
                                                             order.status === 'OUT_FOR_DELIVERY' ? 'text-blue-600' :
+                                                            order.status === 'ARRIVING' ? 'text-indigo-600' :
+                                                            order.status === 'HANDOVER_PENDING' ? 'text-purple-600 font-bold' :
                                                             order.status === 'PREPARING' ? 'text-amber-600' : 'text-slate-500'
                                                         }`}>
-                                                            {order.status}
+                                                            {order.status.replace(/_/g, ' ')}
                                                         </span>
                                                     </div>
                                                 </td>
@@ -298,15 +306,24 @@ function PharmacyDashboard() {
                                                         <span className="text-green-600 font-semibold flex items-center justify-end gap-1">
                                                             <CheckCircle size={14} /> Completed
                                                         </span>
+                                                    ) : ['OUT_FOR_DELIVERY', 'ARRIVING', 'HANDOVER_PENDING'].includes(order.status) ? (
+                                                        <button 
+                                                            disabled
+                                                            className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-slate-50 border border-slate-200 text-slate-400 rounded-lg font-semibold text-[10px] cursor-not-allowed"
+                                                        >
+                                                            <span>Awaiting Handover</span>
+                                                            <Clock size={12} className="animate-spin text-slate-300" />
+                                                        </button>
                                                     ) : (
                                                         <button 
                                                             onClick={() => handleUpdateStatus(order.id, order.status)}
                                                             className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-slate-900 hover:bg-slate-800 text-white rounded-lg font-semibold text-[10px] transition-all shadow-sm"
                                                         >
                                                             <span>
-                                                                {order.status === 'PENDING' ? 'Start Preparing' :
-                                                                 order.status === 'PREPARING' ? 'Ship Order' :
-                                                                 order.status === 'OUT_FOR_DELIVERY' ? 'Deliver Refill' : 'Completed'}
+                                                                {order.status === 'PENDING' ? 'Confirm Order' :
+                                                                 order.status === 'CONFIRMED' ? 'Start Preparing' :
+                                                                 order.status === 'PREPARING' ? 'Pack Refill' :
+                                                                 order.status === 'PACKED' ? 'Ship Refill' : 'Next Step'}
                                                             </span>
                                                             <ArrowRight size={12} />
                                                         </button>

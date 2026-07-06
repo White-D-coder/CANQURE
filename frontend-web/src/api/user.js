@@ -54,3 +54,21 @@ export const getPatientRefillOrders = async () => {
     }
 };
 
+export const confirmRefillDelivery = async (orderId) => {
+    try {
+        const response = await api.put(`/refill-orders/${orderId}/confirm-delivery`);
+        return response.data;
+    } catch (error) {
+        throw error;
+    }
+};
+
+export const getRefillTracking = async (orderId) => {
+    try {
+        const response = await api.get(`/refill-orders/${orderId}/tracking`);
+        return response.data;
+    } catch (error) {
+        throw error;
+    }
+};
+

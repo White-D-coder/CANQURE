@@ -9,5 +9,7 @@ router.post('/', verifyPatient, controller.createRefillOrder);
 router.get('/patient', verifyPatient, controller.getPatientRefillOrders);
 router.get('/all', verifyPharmacy, controller.getPharmacyRefillOrders);
 router.put('/:id/status', verifyPharmacy, controller.updateRefillOrderStatus);
+router.put('/:id/confirm-delivery', verifyPatient, controller.confirmRefillDelivery);
+router.get('/:id/tracking', verifyPatient, controller.getRefillTracking);
 
 export default router;
