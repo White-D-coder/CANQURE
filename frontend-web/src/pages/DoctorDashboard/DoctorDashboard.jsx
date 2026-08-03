@@ -871,7 +871,7 @@ const DoctorDashboard = () => {
             {/* ── Sidebar ── */}
             <motion.aside
                 animate={{ width: 272 }}
-                className="fixed inset-y-0 left-0 bg-white border-r border-slate-200/80 z-50 flex flex-col h-screen overflow-hidden"
+                className="hidden lg:flex fixed inset-y-0 left-0 bg-white border-r border-slate-200/80 z-50 flex-col h-screen overflow-hidden"
                 style={{ width: 272 }}
             >
                 {/* Logo */}
@@ -933,7 +933,7 @@ const DoctorDashboard = () => {
             </motion.aside>
 
             {/* ── Main Content ── */}
-            <main className="flex-1 min-w-0 pb-20" style={{ marginLeft: 272 }}>
+            <main className="flex-1 min-w-0 pb-20 lg:ml-[272px] ml-0">
 
                 {/* ── Patient Workspace ── */}
                 <AnimatePresence mode="wait">

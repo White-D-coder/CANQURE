@@ -1,6 +1,6 @@
-import React, { useState, useCallback } from 'react';
+import React, { useState } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { Upload, File, X, Check, Loader2, AlertCircle, FileText } from 'lucide-react';
+import { Upload, File, X, AlertCircle, FileText, Camera } from 'lucide-react';
 import api from '../api/axios';
 import { useAuth } from '../contexts/AuthContext';
 
@@ -53,12 +53,9 @@ const UploadReport = ({ onUploadSuccess }) => {
         try {
             const formData = new FormData();
             formData.append('report', file);
-            formData.append('userId', user.id);
+            formData.append('userId', user?.id || '');
             formData.append('reportName', file.name);
 
-            // 1. Call OCR Endpoint
-            // Note: This endpoint should handle both OCR and saving to DB
-            // If it doesn't exist yet, we'll create it in Step 2 of Task 4
             setProgress(40);
             const res = await api.post('/reports', formData, {
                 headers: { 'Content-Type': 'multipart/form-data' }
@@ -84,6 +81,65 @@ const UploadReport = ({ onUploadSuccess }) => {
                 <FileText size={20} color="var(--primary-color)" /> Upload Medical Report
             </h3>
 
+            {/* Mobile Dual Option: Camera vs File Browser */}
+            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px', marginBottom: '16px' }}>
+                <label 
+                    style={{
+                        display: 'flex',
+                        flexDirection: 'column',
+                        alignItems: 'center',
+                        justifyContent: 'center',
+                        gap: '6px',
+                        padding: '14px',
+                        background: '#0f172a',
+                        color: '#ffffff',
+                        borderRadius: '12px',
+                        cursor: 'pointer',
+                        fontWeight: '600',
+                        fontSize: '0.85rem',
+                        minHeight: '48px'
+                    }}
+                >
+                    <Camera size={20} />
+                    <span>Scan with Camera</span>
+                    <input 
+                        type="file" 
+                        accept="image/*" 
+                        capture="environment" 
+                        onChange={handleFileSelect} 
+                        style={{ display: 'none' }}
+                    />
+                </label>
+
+                <label 
+                    style={{
+                        display: 'flex',
+                        flexDirection: 'column',
+                        alignItems: 'center',
+                        justifyContent: 'center',
+                        gap: '6px',
+                        padding: '14px',
+                        background: '#f1f5f9',
+                        color: '#334155',
+                        borderRadius: '12px',
+                        cursor: 'pointer',
+                        fontWeight: '600',
+                        fontSize: '0.85rem',
+                        minHeight: '48px',
+                        border: '1px solid #cbd5e1'
+                    }}
+                >
+                    <Upload size={20} />
+                    <span>Choose File</span>
+                    <input 
+                        type="file" 
+                        accept=".pdf,image/*" 
+                        onChange={handleFileSelect} 
+                        style={{ display: 'none' }}
+                    />
+                </label>
+            </div>
+
             <div 
                 onDragOver={handleDragOver}
                 onDragLeave={handleDragLeave}
@@ -91,21 +147,13 @@ const UploadReport = ({ onUploadSuccess }) => {
                 style={{
                     border: `2px dashed ${isDragging ? 'var(--primary-color)' : '#e2e8f0'}`,
                     borderRadius: '16px',
-                    padding: '40px 20px',
+                    padding: '30px 20px',
                     textAlign: 'center',
                     background: isDragging ? 'rgba(2, 132, 199, 0.05)' : '#f8fafc',
                     transition: 'all 0.2s ease',
-                    cursor: 'pointer',
                     position: 'relative'
                 }}
             >
-                <input 
-                    type="file" 
-                    onChange={handleFileSelect} 
-                    style={{ position: 'absolute', inset: 0, opacity: 0, cursor: 'pointer' }} 
-                    accept=".pdf,image/*"
-                />
-
                 <AnimatePresence mode="wait">
                     {!file ? (
                         <motion.div
@@ -114,14 +162,11 @@ const UploadReport = ({ onUploadSuccess }) => {
                             animate={{ opacity: 1 }}
                             exit={{ opacity: 0 }}
                         >
-                            <div style={{ width: '48px', height: '48px', borderRadius: '50%', background: 'rgba(2, 132, 199, 0.1)', color: 'var(--primary-color)', display: 'flex', alignItems: 'center', justifyContent: 'center', margin: '0 auto 12px' }}>
-                                <Upload size={24} />
-                            </div>
                             <p style={{ fontWeight: '600', color: 'var(--text-primary)', margin: '0 0 4px' }}>
-                                Click or drag report here
+                                Drag report file here
                             </p>
                             <p style={{ fontSize: '0.8rem', color: 'var(--text-secondary)' }}>
-                                PDF or Images (Max 5MB)
+                                Supported formats: PDF, PNG, JPG (Max 5MB)
                             </p>
                         </motion.div>
                     ) : (
@@ -138,7 +183,7 @@ const UploadReport = ({ onUploadSuccess }) => {
                                 <p style={{ fontWeight: '600', margin: 0, maxWidth: '200px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{file.name}</p>
                                 <p style={{ fontSize: '0.75rem', color: 'var(--text-secondary)', margin: 0 }}>{(file.size / 1024).toFixed(1)} KB</p>
                             </div>
-                            <button onClick={(e) => { e.stopPropagation(); setFile(null); }} style={{ background: 'none', border: 'none', color: '#94a3b8' }}>
+                            <button onClick={(e) => { e.stopPropagation(); setFile(null); }} style={{ background: 'none', border: 'none', color: '#94a3b8', minWidth: '44px', minHeight: '44px' }}>
                                 <X size={20} />
                             </button>
                         </motion.div>
@@ -158,7 +203,7 @@ const UploadReport = ({ onUploadSuccess }) => {
                     animate={{ opacity: 1, y: 0 }}
                     className="btn"
                     onClick={handleUpload}
-                    style={{ width: '100%', marginTop: '16px' }}
+                    style={{ width: '100%', marginTop: '16px', minHeight: '48px', fontWeight: '700' }}
                 >
                     Process Report with AI
                 </motion.button>

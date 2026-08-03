@@ -81,6 +81,16 @@ const UserDashboard = () => {
     const [error, setError] = useState(null);
     const [isSidebarOpen, setIsSidebarOpen] = useState(false);
     const [isSidebarCollapsed, setIsSidebarCollapsed] = useState(false);
+    const [isMobile, setIsMobile] = useState(() => typeof window !== 'undefined' && window.innerWidth < 1024);
+    const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
+
+    useEffect(() => {
+        const handleResize = () => {
+            setIsMobile(window.innerWidth < 1024);
+        };
+        window.addEventListener('resize', handleResize);
+        return () => window.removeEventListener('resize', handleResize);
+    }, []);
 
     // Active Permission Role (For Demo/Dev toggle & JWT)
     const [activeRole, setActiveRole] = useState(() => {
@@ -1993,7 +2003,7 @@ const UserDashboard = () => {
             <motion.aside 
                 animate={{ width: isSidebarCollapsed ? 80 : 288 }}
                 transition={{ type: "spring", stiffness: 300, damping: 30 }}
-                className="fixed inset-y-0 left-0 bg-white border-r border-slate-200/80 z-50 flex flex-col h-screen overflow-hidden"
+                className="hidden lg:flex fixed inset-y-0 left-0 bg-white border-r border-slate-200/80 z-50 flex-col h-screen overflow-hidden"
             >
                 <div className="p-6 border-b border-slate-100 flex justify-between items-center h-24 shrink-0">
                     <div className="flex items-center gap-3 text-slate-950 font-semibold text-xl tracking-tight overflow-hidden">
@@ -2128,12 +2138,161 @@ const UserDashboard = () => {
 
             {/* Content main block */}
             <motion.main 
-                animate={{ marginLeft: isSidebarCollapsed ? 80 : 288 }}
+                animate={{ marginLeft: isMobile ? 0 : (isSidebarCollapsed ? 80 : 288) }}
                 transition={{ type: "spring", stiffness: 300, damping: 30 }}
-                className="flex-1 p-6 lg:p-12 max-w-7xl mx-auto w-full min-w-0 pb-24"
+                className="flex-1 p-4 sm:p-6 lg:p-12 max-w-7xl mx-auto w-full min-w-0 pb-28 lg:pb-12"
             >
+                
+            {/* Mobile Top Header Bar */}
+            <div className="lg:hidden sticky top-0 z-40 bg-slate-900 text-white px-4 py-3 flex items-center justify-between shadow-md mb-4 border-b border-slate-800 rounded-b-2xl">
+                <div className="flex items-center gap-2.5">
+                    <div className="w-8 h-8 rounded-xl bg-indigo-600 flex items-center justify-center text-white font-bold text-base shadow-sm">
+                        C
+                    </div>
+                    <span className="font-extrabold text-base tracking-tight text-white">CanQure</span>
+                    <span className="text-[10px] font-semibold bg-slate-800 text-indigo-300 px-2 py-0.5 rounded-full border border-slate-700">
+                        {activeRole === 'patient' ? 'Patient' : 'Caregiver'}
+                    </span>
+                </div>
+                <div className="flex items-center gap-2">
+                    <button 
+                        onClick={() => setShowNotifications(true)}
+                        className="w-9 h-9 rounded-xl bg-slate-800 flex items-center justify-center text-slate-300 relative border border-slate-700"
+                    >
+                        <Bell size={18} />
+                        <span className="absolute top-2 right-2 w-2 h-2 bg-indigo-500 rounded-full"></span>
+                    </button>
+                    <button 
+                        onClick={() => setIsMobileMenuOpen(!isMobileMenuOpen)}
+                        className="w-9 h-9 rounded-xl bg-slate-800 flex items-center justify-center text-slate-300 border border-slate-700"
+                    >
+                        {isMobileMenuOpen ? <X size={20} /> : <Menu size={20} />}
+                    </button>
+                </div>
+            </div>
+
+            {/* Mobile Slide-Over Menu Drawer */}
+            <AnimatePresence>
+                {isMobileMenuOpen && (
+                    <>
+                        <motion.div 
+                            initial={{ opacity: 0 }}
+                            animate={{ opacity: 0.5 }}
+                            exit={{ opacity: 0 }}
+                            onClick={() => setIsMobileMenuOpen(false)}
+                            className="fixed inset-0 bg-black z-50 lg:hidden cursor-pointer"
+                        />
+                        <motion.div 
+                            initial={{ x: '-100%' }}
+                            animate={{ x: 0 }}
+                            exit={{ x: '-100%' }}
+                            transition={{ type: 'spring', damping: 25, stiffness: 200 }}
+                            className="fixed inset-y-0 left-0 w-4/5 max-w-xs bg-slate-900 text-white z-[60] p-6 flex flex-col justify-between lg:hidden shadow-2xl overflow-y-auto"
+                        >
+                            <div>
+                                <div className="flex items-center justify-between mb-8 pb-4 border-b border-slate-800">
+                                    <div className="flex items-center gap-3">
+                                        <div className="w-10 h-10 rounded-xl bg-indigo-600 flex items-center justify-center text-white font-bold text-lg">C</div>
+                                        <span className="font-extrabold text-xl">CanQure</span>
+                                    </div>
+                                    <button onClick={() => setIsMobileMenuOpen(false)} className="p-1 text-slate-400 hover:text-white"><X size={20} /></button>
+                                </div>
+                                <nav className="space-y-1.5">
+                                    {[
+                                        { id: 'overview', icon: LayoutDashboard, label: 'Overview' },
+                                        { id: 'journey', icon: TrendingUp, label: 'My Journey' },
+                                        { id: 'prescriptions', icon: Pill, label: 'My Medicines' },
+                                        { id: 'vault', icon: Database, label: 'Medical Vault' },
+                                        { id: 'upload', icon: UploadCloud, label: 'Report Vault' },
+                                        { id: 'circle', icon: Users, label: 'Circle of Care' },
+                                        { id: 'appointments', icon: Calendar, label: 'Schedules' },
+                                        { id: 'consultations', icon: Video, label: 'Consultations' },
+                                        { id: 'risk', icon: Brain, label: 'AI Care Insights' },
+                                        { id: 'carehub', icon: FileHeart, label: 'Care Hub' },
+                                        { id: 'emergency', icon: ShieldAlert, label: 'Emergency Center' },
+                                        { id: 'settings', icon: Settings, label: 'Settings' }
+                                    ].map((item) => (
+                                        <button
+                                            key={item.id}
+                                            onClick={() => { setActiveTab(item.id); setIsMobileMenuOpen(false); }}
+                                            className={`w-full flex items-center gap-3 px-4 py-3 rounded-xl font-semibold text-sm transition-all ${
+                                                activeTab === item.id 
+                                                ? 'bg-indigo-600 text-white' 
+                                                : 'text-slate-400 hover:bg-slate-800 hover:text-white'
+                                            }`}
+                                        >
+                                            <item.icon size={18} />
+                                            <span>{item.label}</span>
+                                        </button>
+                                    ))}
+                                </nav>
+                            </div>
+                            <div className="pt-6 border-t border-slate-800">
+                                <button 
+                                    onClick={handleLogout}
+                                    className="w-full flex items-center gap-3 px-4 py-3 rounded-xl text-slate-400 hover:text-red-400 hover:bg-red-500/10 font-semibold text-sm transition-all"
+                                >
+                                    <LogOut size={18} />
+                                    <span>Logout</span>
+                                </button>
+                            </div>
+                        </motion.div>
+                    </>
+                )}
+            </AnimatePresence>
+
                 {renderContent()}
             </motion.main>
+
+            
+            {/* Sticky Mobile Bottom Navigation Bar */}
+            <div className="fixed bottom-0 left-0 right-0 z-40 bg-slate-900/95 backdrop-blur-md border-t border-slate-800 flex justify-around items-center h-16 px-1 lg:hidden shadow-2xl">
+                <button 
+                    onClick={() => setActiveTab('overview')}
+                    className={`flex flex-col items-center justify-center w-14 h-12 rounded-xl transition-all ${
+                        activeTab === 'overview' ? 'text-indigo-400 font-bold' : 'text-slate-400'
+                    }`}
+                >
+                    <LayoutDashboard size={20} />
+                    <span className="text-[10px] mt-0.5">Home</span>
+                </button>
+
+                <button 
+                    onClick={() => setActiveTab('prescriptions')}
+                    className={`flex flex-col items-center justify-center w-14 h-12 rounded-xl transition-all ${
+                        activeTab === 'prescriptions' ? 'text-indigo-400 font-bold' : 'text-slate-400'
+                    }`}
+                >
+                    <Pill size={20} />
+                    <span className="text-[10px] mt-0.5">Meds</span>
+                </button>
+
+                {/* Center Camera/Upload Trigger Button */}
+                <button 
+                    onClick={() => { setUploadStep('source'); setShowUploadModal(true); }}
+                    className="w-12 h-12 rounded-2xl bg-indigo-600 text-white flex items-center justify-center shadow-lg shadow-indigo-500/40 -mt-5 border-2 border-slate-900 active:scale-95 transition-transform"
+                >
+                    <UploadCloud size={22} />
+                </button>
+
+                <button 
+                    onClick={() => setActiveTab('journey')}
+                    className={`flex flex-col items-center justify-center w-14 h-12 rounded-xl transition-all ${
+                        activeTab === 'journey' ? 'text-indigo-400 font-bold' : 'text-slate-400'
+                    }`}
+                >
+                    <TrendingUp size={20} />
+                    <span className="text-[10px] mt-0.5">Timeline</span>
+                </button>
+
+                <button 
+                    onClick={() => { setEmergencyStep('warning'); setShowEmergencyModal(true); }}
+                    className="flex flex-col items-center justify-center w-14 h-12 rounded-xl text-red-400 hover:text-red-300 transition-all"
+                >
+                    <ShieldAlert size={20} className="animate-pulse" />
+                    <span className="text-[10px] mt-0.5 font-bold">SOS</span>
+                </button>
+            </div>
 
             <SOSButton />
 
